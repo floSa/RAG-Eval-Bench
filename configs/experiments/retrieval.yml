@@ -1,0 +1,61 @@
+# Matrice d'experience : quelle strategie de recherche paie ?
+#
+# Les variantes sont fusionnees (merge profond) sur `base`, donc chacune ne
+# declare que ce qu'elle change. Toutes partagent le meme chunking, donc le
+# meme index_hash : le corpus n'est encode qu'UNE fois pour les 6 configs.
+#
+#   uv run ragbench config matrix configs/experiments/retrieval.yml
+
+base:
+  name: retrieval-sweep
+  chunking:
+    strategy: recursive
+    chunk_size: 1000
+    chunk_overlap: 150
+  retrieval:
+    mode: dense
+    top_k: 5
+    fetch_k: 20
+  generation:
+    prompt_template: default
+    temperature: 0.0
+  models:
+    generator: gemma4:e4b
+    embedder: nomic-embed-text:latest
+    judge: gemma4:e4b
+
+variants:
+  # --- Temoin sans retrieval -------------------------------------------
+  # Le resultat le plus important de la matrice : si le RAG ne bat pas ca,
+  # tout le reste est du bruit.
+  - name: closed-book
+    description: Aucun retrieval, le modele repond de memoire.
+    generation:
+      prompt_template: closed_book
+
+  # --- Temoin lexical ---------------------------------------------------
+  - name: lexical-k5
+    description: Recherche plein-texte seule. Dit ce que le dense apporte.
+    retrieval:
+      mode: lexical
+
+  # --- La baseline ------------------------------------------------------
+  - name: dense-k5
+    description: Reference.
+
+  # --- Un seul parametre change a la fois -------------------------------
+  - name: dense-k10
+    description: Deux fois plus de contexte. Teste si le rappel manque ou si le bruit nuit.
+    retrieval:
+      top_k: 10
+
+  - name: hybrid-k5
+    description: Fusion RRF dense + lexical.
+    retrieval:
+      mode: hybrid
+
+  - name: dense-k5-rerank
+    description: 20 candidats reordonnes par le LLM, 5 gardes. Le plus cher de la matrice.
+    retrieval:
+      rerank: llm
+      fetch_k: 20

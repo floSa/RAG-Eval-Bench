@@ -1,0 +1,53 @@
+[project]
+name = "ragbench"
+version = "0.1.0"
+description = "Banc d'évaluation RAG on-premise : matrice de configurations x jeux de questions x frameworks d'évaluation"
+readme = "README.md"
+requires-python = ">=3.12"
+
+dependencies = [
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3",
+    "openai>=1.60",
+    "pydantic>=2.9",
+    "pyyaml>=6.0",
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "tenacity>=9.0",
+    "typer>=0.15",
+    "rich>=13.9",
+    "httpx>=0.27",
+]
+
+# Les frameworks d'evaluation sont des extras : leurs contraintes de version
+# entrent souvent en conflit entre elles. Un plugin absent est desactive, pas
+# fatal (cf. evaluators/registry.py).
+[project.optional-dependencies]
+ui = ["streamlit>=1.40", "altair>=5.4"]
+ragas = ["ragas>=0.2", "langchain-openai>=0.2", "datasets>=3.0"]
+deepeval = ["deepeval>=2.0"]
+trulens = ["trulens-core>=1.0", "trulens-providers-openai>=1.0"]
+ragchecker = ["ragchecker>=0.1"]
+stats = ["scipy>=1.14", "scikit-learn>=1.5"]
+
+[project.scripts]
+ragbench = "ragbench.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ragbench"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

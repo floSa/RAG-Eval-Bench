@@ -1,1 +1,12 @@
 .env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Corpus telecharges et artefacts de campagne : reproductibles depuis le
+# code, et trop lourds pour un depot.
+data/raw/
+data/cache/
+.env.bak

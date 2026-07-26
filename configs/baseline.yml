@@ -1,0 +1,40 @@
+# Configuration de reference. Toute autre config se compare a celle-ci.
+#
+# Volontairement banale : dense simple, top_k=5, prompt neutre. L'interet
+# d'une baseline n'est pas d'etre bonne, c'est d'etre stable et de ne
+# contenir aucune astuce qu'on ne saurait pas justifier.
+
+name: baseline
+description: >
+  Dense retrieval nomic-embed-text, chunking recursif 1000/150, top_k=5,
+  generation gemma4:e4b temperature 0.
+
+chunking:
+  strategy: recursive
+  chunk_size: 1000
+  chunk_overlap: 150
+  document_prefix: "search_document: "
+
+retrieval:
+  mode: dense
+  top_k: 5
+  fetch_k: 20
+  rerank: none
+  query_prefix: "search_query: "
+  query_rewrite: false
+
+generation:
+  prompt_template: default
+  temperature: 0.0
+  max_tokens: 512
+  allow_abstain: true
+
+models:
+  generator: gemma4:e4b
+  embedder: nomic-embed-text:latest
+  # judge == generator : biais d'auto-preference assume pour la premiere
+  # baseline, signale par PipelineConfig.warnings() et fige dans runs.warnings.
+  # A remplacer des qu'un second modele est provisionne cote llm-service.
+  judge: gemma4:e4b
+
+seed: 42

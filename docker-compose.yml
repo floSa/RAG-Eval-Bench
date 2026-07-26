@@ -1,79 +1,104 @@
-# Supprimez la ligne 'version: '3.9'' car elle est obsolète
-# version: '3.9'
+name: ragbench
+
+# =============================================================================
+# Banc d'evaluation RAG — stack on-premise.
+#
+# Inversion par rapport a la version precedente du projet : le service LLM
+# CENTRAL (repo llm-service) est desormais le mode par defaut, plus une
+# option. Un banc d'evaluation consomme des milliers d'appels par campagne ;
+# faire tourner un second Ollama a cote du central saturerait les 16 Go de
+# VRAM et fausserait toute mesure de latence.
+#
+# Prerequis :  make up  dans ~/mes_projets/llm-service  (cree le reseau llm-net)
+#
+# Lancement :
+#   docker compose up -d db                 # base seule (dev local via uv)
+#   docker compose up -d                    # base + tableau de bord
+#   docker compose run --rm runner ...      # campagne d'evaluation
+#
+# Ports hote (cf. ~/mes_projets/PORTS.md) : 5432 pgvector, 8502 Streamlit.
+# Le port 11435 (ancien Ollama local du projet) est libere.
+# =============================================================================
 
 services:
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama-server
-    restart: unless-stopped
-    env_file:
-      - .env
-    # environment:
-    #   - OLLAMA_HOST=... (Managed by .env)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [ gpu ]
-    ports:
-      - "${OLLAMA_PORT:-11435}:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-      - ./ollama/entrypoint.sh:/entrypoint.sh:ro
-    networks:
-      - app-network
-    healthcheck:
-      test: [ "CMD", "ollama", "list" ] # C'est déjà correct, juste pour confirmation
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    entrypoint: [ "sh", "/entrypoint.sh" ]
-
   db:
-    image: pgvector/pgvector:pg15
-    container_name: pgvector-db
+    image: pgvector/pgvector:pg17
+    container_name: ragbench-db
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-ragbench}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     networks:
       - app-network
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres" ] # Correction ici : ajouter CMD-SHELL
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    # Une campagne ecrit des dizaines de milliers de lignes (predictions,
+    # scores) et lit des vecteurs en parcours exact : les valeurs par defaut
+    # de Postgres sont trop basses pour ca.
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c work_mem=64MB
+      -c max_parallel_workers_per_gather=4
 
-  rag-python:
-    build: ./python # Utiliser le Dockerfile
-    container_name: rag-python
+  # Tableau de bord de comparaison des runs.
+  ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ragbench-ui
     restart: unless-stopped
-    env_file:
-      - .env
-    volumes:
-      - ./data:/app/data
+    env_file: [.env]
+    environment:
+      DB_HOST: db
+      LLM_BASE_URL: http://ollama-central:11434/v1
+    command: streamlit run src/ragbench/ui/app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8502:8501"
     networks:
       - app-network
+      - llm-net
     depends_on:
       db:
         condition: service_healthy
-      ollama:
+
+  # Executeur de campagnes. Pas de `restart` : c'est un job, pas un service.
+  #   docker compose run --rm runner ragbench doctor
+  runner:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    env_file: [.env]
+    environment:
+      DB_HOST: db
+      LLM_BASE_URL: http://ollama-central:11434/v1
+    volumes:
+      - ./data:/app/data
+      - ./configs:/app/configs
+    networks:
+      - app-network
+      - llm-net
+    depends_on:
+      db:
         condition: service_healthy
-    ports:
-      - "0.0.0.0:8502:8501"
-      - "0.0.0.0:8888:8888"
+    profiles: ["jobs"]
+    entrypoint: ["ragbench"]
+    command: ["doctor"]
 
 volumes:
   pgdata:
-  ollama_data:
-
 
 networks:
   app-network:
+  # Cree par `make up` dans llm-service. En "external" pour qu'un seul
+  # compose en soit proprietaire.
+  llm-net:
+    external: true
