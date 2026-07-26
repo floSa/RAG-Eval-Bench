@@ -22,8 +22,9 @@ from __future__ import annotations
 import asyncio
 import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 import psycopg
 
@@ -32,7 +33,8 @@ from ..config import PipelineConfig
 from ..llm import LLMClient
 from ..rag import pipeline
 from ..rag.ingest import ensure_index
-from ..settings import Settings, settings as default_settings
+from ..settings import Settings
+from ..settings import settings as default_settings
 
 
 @dataclass

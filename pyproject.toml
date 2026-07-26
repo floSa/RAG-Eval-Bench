@@ -45,6 +45,24 @@ packages = ["src/ragbench"]
 line-length = 100
 target-version = "py312"
 
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "SIM", "UP"]
+ignore = [
+    # typer declare ses options en valeurs par defaut : c'est l'idiome du
+    # framework, pas une erreur.
+    "B008",
+    # Les except larges du projet sont delibérés et commentes un par un :
+    # un evaluateur ou un appel LLM qui echoue doit etre TRACE, pas faire
+    # tomber une campagne de plusieurs heures.
+    "BLE001",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Les imports de ces modules servent a peupler un registre : ils sont
+# utilises par effet de bord, pas par reference.
+"src/ragbench/datasets/__init__.py" = ["F401"]
+"src/ragbench/evaluators/__init__.py" = ["F401"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [

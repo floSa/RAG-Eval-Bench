@@ -124,7 +124,7 @@ async def ensure_index(
         if dim is None and vectors:
             dim = len(vectors[0])
 
-        for p, vec in zip(pending, vectors):
+        for p, vec in zip(pending, vectors, strict=True):
             p["embedding"] = vec
 
         db.insert_chunks(conn, index_id, pending)

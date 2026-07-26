@@ -223,7 +223,7 @@ async def _llm_rerank(
 
     scored: list[tuple[float, Context]] = []
     n_unparsed = 0
-    for ctx, comp in zip(candidates, completions):
+    for ctx, comp in zip(candidates, completions, strict=True):
         digits = [ch for ch in comp.text if ch.isdigit()] if comp else []
         if not digits:
             # Echec du reranker : on retombe sur le rang d'origine plutot

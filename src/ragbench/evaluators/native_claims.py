@@ -128,7 +128,7 @@ class NativeClaims:
         utilizations: list[float] = []
         n_unparsed = 0
 
-        for prediction, answer_raw, gold_raw in zip(usable, answer_extractions, gold_extractions):
+        for prediction, answer_raw, gold_raw in zip(usable, answer_extractions, gold_extractions, strict=True):
             qid = prediction["question_id"]
             if answer_raw is None:
                 n_unparsed += 1
@@ -177,7 +177,7 @@ class NativeClaims:
                         # Les claims contredites sont le signal le plus fort
                         # d'hallucination : le contexte dit l'inverse.
                         "contradicted_claims": [
-                            c[:200] for c, label in zip(answer_claims, labels)
+                            c[:200] for c, label in zip(answer_claims, labels, strict=True)
                             if label.startswith("CONTRADICTED")
                         ][:3],
                     },

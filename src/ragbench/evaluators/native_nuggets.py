@@ -29,9 +29,7 @@ l'objet meme de ce banc.
 
 from __future__ import annotations
 
-import asyncio
 import re
-from typing import Any
 
 from .base import EvalContext, Score, register
 
@@ -133,7 +131,7 @@ class NativeNuggets:
                         # ils disent quel paragraphe le retrieval aurait du
                         # remonter.
                         "missing": [
-                            f[:200] for f, ok in zip(facts, supported) if not ok
+                            f[:200] for f, ok in zip(facts, supported, strict=True) if not ok
                         ][:5],
                     },
                 )

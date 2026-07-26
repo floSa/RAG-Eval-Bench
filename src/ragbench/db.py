@@ -8,16 +8,18 @@ variable experimentale principale du projet.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from contextlib import contextmanager
 from importlib import resources
-from typing import Any, Iterator
+from typing import Any
 
 import psycopg
 from pgvector.psycopg import register_vector
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from .settings import Settings, settings as default_settings
+from .settings import Settings
+from .settings import settings as default_settings
 
 
 @contextmanager
@@ -31,13 +33,12 @@ def connect(cfg: Settings | None = None, *, autocommit: bool = False) -> Iterato
 def ensure_database(cfg: Settings | None = None) -> bool:
     """Cree la base cible si absente. Renvoie True si elle a ete creee."""
     cfg = cfg or default_settings
-    with psycopg.connect(cfg.admin_dsn, autocommit=True) as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (cfg.db_name,))
-            if cur.fetchone():
-                return False
-            cur.execute(f'CREATE DATABASE "{cfg.db_name}"')
-            return True
+    with psycopg.connect(cfg.admin_dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (cfg.db_name,))
+        if cur.fetchone():
+            return False
+        cur.execute(f'CREATE DATABASE "{cfg.db_name}"')
+        return True
 
 
 def migrate(cfg: Settings | None = None) -> None:

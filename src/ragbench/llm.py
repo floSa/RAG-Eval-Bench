@@ -30,7 +30,8 @@ from tenacity import (
     wait_exponential,
 )
 
-from .settings import Settings, settings as default_settings
+from .settings import Settings
+from .settings import settings as default_settings
 
 
 @dataclass

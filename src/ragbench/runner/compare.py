@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .. import db, stats
-from ..settings import Settings, settings as default_settings
+from ..settings import Settings
+from ..settings import settings as default_settings
 
 
 @dataclass

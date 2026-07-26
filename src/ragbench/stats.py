@@ -129,7 +129,7 @@ def paired_bootstrap(
     if not a:
         raise ValueError("aucune paire a comparer")
 
-    deltas = [bi - ai for ai, bi in zip(a, b)]
+    deltas = [bi - ai for ai, bi in zip(a, b, strict=True)]
     observed = fmean(deltas)
     rng = random.Random(seed)
     n = len(deltas)
@@ -178,8 +178,8 @@ def mcnemar(a: list[float], b: list[float]) -> tuple[int, int, float]:
     if len(a) != len(b):
         raise ValueError(f"echantillons non apparies : {len(a)} vs {len(b)}")
 
-    b_wins = sum(1 for ai, bi in zip(a, b) if bi > ai)
-    a_wins = sum(1 for ai, bi in zip(a, b) if ai > bi)
+    b_wins = sum(1 for ai, bi in zip(a, b, strict=True) if bi > ai)
+    a_wins = sum(1 for ai, bi in zip(a, b, strict=True) if ai > bi)
     n = b_wins + a_wins
     if n == 0:
         return 0, 0, 1.0
@@ -210,7 +210,7 @@ def cohen_kappa(rater_a: list[float], rater_b: list[float]) -> float:
     b = [round(x) for x in rater_b]
     n = len(a)
 
-    observed = sum(1 for x, y in zip(a, b) if x == y) / n
+    observed = sum(1 for x, y in zip(a, b, strict=True) if x == y) / n
 
     categories = set(a) | set(b)
     expected = sum(

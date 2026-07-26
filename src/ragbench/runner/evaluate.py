@@ -20,7 +20,8 @@ from typing import Any
 from .. import db, evaluators
 from ..config import PipelineConfig
 from ..llm import LLMClient
-from ..settings import Settings, settings as default_settings
+from ..settings import Settings
+from ..settings import settings as default_settings
 
 
 @dataclass

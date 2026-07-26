@@ -123,7 +123,9 @@ def _apply_overlap(chunks: list[str], overlap: int) -> list[str]:
     if overlap <= 0 or len(chunks) < 2:
         return chunks
     out = [chunks[0]]
-    for previous, current in zip(chunks, chunks[1:]):
+    # strict=False est VOULU ici : chunks[1:] a deliberement un element de
+    # moins, on apparie chaque chunk avec son predecesseur.
+    for previous, current in zip(chunks, chunks[1:], strict=False):
         tail = previous[-overlap:]
         out.append(f"{tail}{current}" if tail.strip() else current)
     return out

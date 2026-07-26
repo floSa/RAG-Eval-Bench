@@ -279,11 +279,15 @@ def run_cmd(
             ) as bar:
                 task = bar.add_task("run", total=None)
 
-                def _progress(done: int, total: int) -> None:
-                    bar.update(task, completed=done, total=total)
+                # task est lie par defaut plutot que capture : la boucle sur
+                # `configs` en cree un nouveau a chaque tour, et une capture
+                # tardive ferait pointer les callbacks du run N sur la barre
+                # du run N+1.
+                def _progress(done: int, total: int, _task=task) -> None:
+                    bar.update(_task, completed=done, total=total)
 
-                def _index_progress(done: int, total: int, chunks: int) -> None:
-                    bar.update(task, completed=done, total=total)
+                def _index_progress(done: int, total: int, chunks: int, _task=task) -> None:
+                    bar.update(_task, completed=done, total=total)
 
                 report = await runner.run_campaign(
                     cfg,
