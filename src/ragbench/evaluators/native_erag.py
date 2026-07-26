@@ -22,6 +22,19 @@ Ce que ca revele concretement, et que native.ir ne voit pas :
 Cout : top_k appels LLM par question, en plus du run lui-meme. C'est
 l'evaluateur le plus cher du banc — d'ou `max_samples`, dont la valeur par
 defaut est volontairement basse.
+
+LIMITE MESUREE SUR MULTIHOP-RAG. La methode suppose qu'un document SEUL
+puisse permettre de repondre. Sur un corpus multi-hop, c'est faux par
+construction : la reponse exige de croiser 2 a 4 articles, et l'utilite
+individuelle ressort a 0,000 a tous les rangs. Le chiffre n'est pas un bug,
+il dit exactement ce qu'il mesure — mais il ne DISCRIMINE plus entre deux
+configurations, donc il n'apprend rien ici.
+
+eRAG garde tout son sens sur du QA a un seul saut (SQuAD, Natural
+Questions, ou un corpus de documentation technique ou la reponse tient dans
+une page). Pour le multi-hop, `native.nuggets` repond a la meme question —
+« les bons passages ont-ils ete remontes ? » — sans supposer qu'un seul
+suffise.
 """
 
 from __future__ import annotations
