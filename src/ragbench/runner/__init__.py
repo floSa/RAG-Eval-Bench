@@ -2,9 +2,11 @@
 
 from .campaign import CampaignReport, run_campaign
 from .compare import (
+    Calibration,
     ComparisonResult,
     RunSummary,
     available_metrics,
+    calibrate,
     compare,
     compare_all,
     leaderboard,
@@ -18,9 +20,11 @@ __all__ = [
     "run_campaign",
     "EvalReport",
     "evaluate_run",
+    "Calibration",
     "ComparisonResult",
     "RunSummary",
     "available_metrics",
+    "calibrate",
     "compare",
     "compare_all",
     "leaderboard",

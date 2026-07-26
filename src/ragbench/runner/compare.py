@@ -12,6 +12,7 @@ question_id, et renvoient combien de questions ont ete ecartees.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -211,6 +212,126 @@ def compare_all(
             out.append(compare(run_a, run_b, evaluator=evaluator, metric=metric, settings=settings))
         except ValueError:
             continue
+    return out
+
+
+@dataclass
+class Calibration:
+    """Accord entre un juge et une reference, sur les memes questions."""
+
+    evaluator: str
+    metric: str
+    kappa: float
+    raw_agreement: float
+    n: int
+    # Part des questions ou le juge dit « bon » et la reference « mauvais ».
+    # Un juge peut avoir un kappa correct et etre systematiquement trop
+    # genereux ; les deux chiffres ne disent pas la meme chose.
+    false_positive_rate: float
+    false_negative_rate: float
+
+    def verdict(self) -> str:
+        if math.isnan(self.kappa):
+            return "indefini (l'un des deux ne varie pas)"
+        if self.kappa < 0.4:
+            return "faible — ce juge ne mesure pas la meme chose que la reference"
+        if self.kappa < 0.6:
+            return "moyen — utilisable en tendance, pas pour trancher"
+        if self.kappa < 0.8:
+            return "substantiel"
+        return "excellent"
+
+
+REFERENCE_METRIC = ("native.answer", "contains")
+
+
+def calibrate(
+    run_id: int,
+    *,
+    reference: tuple[str, str] = REFERENCE_METRIC,
+    settings: Settings | None = None,
+    seed_annotations: bool = True,
+) -> list[Calibration]:
+    """Confronte chaque juge a une reference DETERMINISTE.
+
+    Pourquoi c'est legitime sans annotation humaine : sur un dataset qui
+    fournit les reponses gold — MultiHop-RAG en fournit — la metrique
+    `native.answer/contains` n'est pas une opinion, c'est une comparaison a
+    la verite terrain. Elle constitue donc une reference recevable pour
+    mesurer si un juge LLM mesure bien ce qu'il pretend mesurer.
+
+    CE QUE CA NE REMPLACE PAS. La reference porte sur la JUSTESSE de la
+    reponse. Elle valide donc correctement les metriques qui pretendent
+    mesurer la justesse (answer_relevancy, claim_recall), mais elle est un
+    signal FAIBLE pour la fidelite : une reponse peut etre parfaitement
+    fidele au contexte et fausse, ou juste et mal soutenue. Pour la
+    fidelite, seule une annotation humaine tranche — d'ou l'onglet
+    Annotation, qui reste necessaire.
+
+    Les valeurs de reference sont aussi ecrites dans `annotations` sous
+    l'annotateur `ground_truth`, pour qu'elles apparaissent a cote des
+    annotations humaines et que les deux soient comparables.
+    """
+    settings = settings or default_settings
+
+    with db.connect(settings) as conn:
+        ref_series = metric_series(conn, run_id, reference[0], reference[1])
+        if not ref_series.by_question:
+            raise ValueError(
+                f"reference '{reference[0]}/{reference[1]}' absente du run {run_id} — "
+                f"lancer d'abord `ragbench eval run {run_id} -e native.answer`"
+            )
+
+        if seed_annotations:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO annotations (run_id, question_id, metric, value, annotator, notes)
+                    VALUES (%s, %s, 'correct', %s, 'ground_truth', %s)
+                    ON CONFLICT (run_id, question_id, metric, annotator)
+                    DO UPDATE SET value = EXCLUDED.value
+                    """,
+                    [
+                        (run_id, qid, value, f"derive de {reference[0]}/{reference[1]}")
+                        for qid, value in ref_series.by_question.items()
+                    ],
+                )
+            conn.commit()
+
+        candidates = available_metrics(conn, run_id)
+        out: list[Calibration] = []
+
+        for evaluator, metric, _ in candidates:
+            if (evaluator, metric) == reference:
+                continue
+            series = metric_series(conn, run_id, evaluator, metric)
+            ref_values, judge_values, _ = ref_series.aligned_with(series)
+            if len(ref_values) < 5:
+                continue
+            # Les scores continus sont binarises au seuil de 0,5 : le kappa
+            # est defini sur des categories, et la reference est binaire.
+            ref_bin = [round(v) for v in ref_values]
+            judge_bin = [1 if v >= 0.5 else 0 for v in judge_values]
+
+            agree = sum(1 for a, b in zip(ref_bin, judge_bin, strict=True) if a == b)
+            fp = sum(1 for a, b in zip(ref_bin, judge_bin, strict=True) if a == 0 and b == 1)
+            fn = sum(1 for a, b in zip(ref_bin, judge_bin, strict=True) if a == 1 and b == 0)
+
+            out.append(
+                Calibration(
+                    evaluator=evaluator,
+                    metric=metric,
+                    kappa=stats.cohen_kappa(ref_bin, judge_bin),
+                    raw_agreement=agree / len(ref_bin),
+                    n=len(ref_bin),
+                    false_positive_rate=fp / len(ref_bin),
+                    false_negative_rate=fn / len(ref_bin),
+                )
+            )
+
+    # Les kappa indefinis (NaN) en fin de liste : ils ne portent aucune
+    # information et ne doivent pas occuper le haut du tableau.
+    out.sort(key=lambda c: (-1e9 if math.isnan(c.kappa) else c.kappa), reverse=True)
     return out
 
 

@@ -8,6 +8,7 @@ d'un onglet de navigateur ouvert.
 from __future__ import annotations
 
 import asyncio
+import math
 import json
 from pathlib import Path
 
@@ -571,6 +572,73 @@ def report_cmd(
     console.print(
         "[dim]Vue d'ensemble sans test statistique : deux valeurs proches ne sont "
         "pas departagees. Utiliser `ragbench compare A B`.[/]"
+    )
+
+
+@app.command("calibrate")
+def calibrate_cmd(
+    run_id: int,
+    reference: str = typer.Option(
+        "native.answer/contains",
+        help="Metrique servant de reference. Doit etre deterministe.",
+    ),
+) -> None:
+    """Confronte chaque juge a une reference deterministe.
+
+    Sur un dataset qui fournit les reponses gold, `native.answer/contains`
+    n'est pas une opinion mais une comparaison a la verite terrain. Elle
+    permet donc de calibrer les juges LLM sans annotation humaine.
+
+    Ce que ca ne remplace pas : la reference porte sur la JUSTESSE, pas sur
+    la fidelite. Une reponse peut etre fidele au contexte et fausse. Pour
+    valider un juge de fidelite, l'annotation humaine reste necessaire.
+    """
+    evaluator, _, metric = reference.partition("/")
+    results = runner.calibrate(run_id, reference=(evaluator, metric))
+
+    if not results:
+        console.print(
+            "[yellow]aucun juge a calibrer — lancer d'abord des evaluateurs "
+            "a base de juge (ragas, deepeval, native.claims)[/]"
+        )
+        return
+
+    # Colonne du nom sans repli : un nom de juge coupe sur cinq lignes rend
+    # le tableau illisible, et c'est la colonne qu'on lit en premier.
+    table = Table("Juge / metrique", "kappa", "Accord", "Genereux", "Severe", "n")
+    table.columns[0].no_wrap = True
+    for res in results:
+        kappa = "[dim]indefini[/]" if math.isnan(res.kappa) else f"{res.kappa:+.3f}"
+        table.add_row(
+            escape(f"{res.evaluator}/{res.metric}"),
+            kappa,
+            f"{res.raw_agreement:.3f}",
+            f"{res.false_positive_rate:.3f}",
+            f"{res.false_negative_rate:.3f}",
+            str(res.n),
+        )
+    console.print(table)
+    # Les lectures en clair sous le tableau plutot que dans une colonne :
+    # elles sont trop longues pour tenir sans casser la mise en forme.
+    for res in results:
+        colour = "green" if res.kappa >= 0.6 else ("yellow" if res.kappa >= 0.4 else "red")
+        console.print(
+            f"  [{colour}]{escape(res.evaluator)}/{escape(res.metric)}[/] : {res.verdict()}"
+        )
+    console.print(
+        "[dim]« Genereux » = le juge valide ce que la reference juge faux. "
+        "Un juge peut avoir un kappa correct et etre systematiquement trop "
+        "indulgent : les deux chiffres ne disent pas la meme chose.[/]"
+    )
+    console.print(
+        f"[dim]Reference : {escape(reference)} (deterministe, derivee des reponses gold). "
+        "Les valeurs sont aussi ecrites dans `annotations` sous l'annotateur "
+        "`ground_truth`.[/]"
+    )
+    console.print(
+        "[yellow]L'accord brut seul est trompeur : sur un jeu ou 80 % des reponses "
+        "sont fausses, un juge qui repond toujours « fausse » atteint 80 % d'accord "
+        "et un kappa de 0.[/]"
     )
 
 
