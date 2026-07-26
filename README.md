@@ -1,172 +1,135 @@
-# RAG Ollama Streamlit
+# ragbench — banc d'évaluation RAG on-premise
 
-**Application de RAG (Retrieval Augmented Generation) 100 % local : interrogez une base
-de films en langage naturel, avec Ollama, PostgreSQL (pgvector) et Streamlit.**
+**Comparer des configurations RAG entre elles, sur des chiffres qu'on a le droit de
+croire.** Matrice de configurations × jeu de questions × frameworks d'évaluation,
+100 % local : aucun appel à un service externe.
 
-![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15_+_pgvector-4169E1?logo=postgresql&logoColor=white)
-![Streamlit](https://img.shields.io/badge/Streamlit-1.28.1-FF4B4B?logo=streamlit&logoColor=white)
-![Ollama](https://img.shields.io/badge/Ollama-LLM_local-000000?logo=ollama&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![uv](https://img.shields.io/badge/uv-packaging-DE5FE9)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17_+_pgvector-4169E1?logo=postgresql&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-service_central-000000?logo=ollama&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-tableau_de_bord-FF4B4B?logo=streamlit&logoColor=white)
 
-![Demo RAG](demo.gif)
+> Documentation détaillée à venir. Ce README couvre l'essentiel pour démarrer.
 
-## Description
+## Le problème
 
-Ce projet permet d'interroger une base de connaissances de films en langage naturel. Il
-combine :
-1. **Recherche vectorielle (Retrieval)** : trouve les films les plus pertinents via
-   `pgvector` et les embeddings `nomic-embed-text` (768 dimensions).
-2. **Génération (Generation)** : utilise le LLM `phi4-mini` pour synthétiser une réponse
-   à partir des synopsis trouvés.
+Évaluer un RAG, ce n'est pas produire un score. C'est pouvoir répondre à
+« cette modification a-t-elle amélioré quelque chose, et où ça casse-t-il ? »
+Trois exigences en découlent, et elles structurent tout le projet :
 
-**Technologies :**
-- **Ollama** : LLM & embeddings (local GPU/CPU).
-- **PostgreSQL + pgvector** : base de données vectorielle.
-- **Streamlit** : interface de chat & gestion.
-- **Python** : backend RAG avec *connection pooling* pour la performance.
+1. **Attribuer la faute.** Un score global ne dit pas s'il faut changer le
+   retriever ou le prompt. Le banc mesure les trois étages séparément
+   (retrieval, génération, bout en bout) et sait dire lequel est en cause.
+2. **Trancher statistiquement.** Sur 200 questions, deux points d'écart sont du
+   bruit. Toute comparaison passe par un test **apparié** avec intervalle de
+   confiance, jamais par deux moyennes mises côte à côte.
+3. **Se méfier des juges.** Un juge LLM non confronté à un humain ne produit pas
+   une métrique, il produit une opinion. Le banc fournit un écran d'annotation
+   et calcule le κ de Cohen entre juge et humain.
 
 ## Architecture
 
-Le projet est composé de **3 services Docker** interconnectés sur le réseau privé
-`app-network` :
-
-1. **ollama** : serveur d'inférence LLM + embeddings.
-2. **db** : base PostgreSQL vectorielle (pgvector).
-3. **rag-python** : application Streamlit (port interne 8501) + Jupyter (8888).
+Tout passe par une **API OpenAI-compatible**. C'est la décision qui porte le
+reste : Ollama et vLLM l'exposent tous deux, et tous les frameworks
+d'évaluation acceptent un `base_url` custom. Un seul point d'entrée suffit donc
+pour brancher n'importe quel framework sur n'importe quel moteur, sans
+adaptateur maison et sans appel externe.
 
 ```mermaid
 flowchart LR
-  u[Utilisateur] --> app
-  subgraph App["rag-python (Streamlit)"]
-    app[Chat RAG]
-  end
-  subgraph Ollama["ollama"]
-    llm[phi4-mini]
-    emb[nomic-embed-text]
-  end
-  subgraph Store["db (pgvector)"]
-    films[(table films)]
-  end
-  app -->|/api/chat, /api/embeddings| llm
-  app --> emb
-  app -->|SQL cosinus| films
+  cfg[configs/*.yml] --> run[campagne]
+  run --> pred[(predictions)]
+  pred --> ev[evaluators/]
+  ev --> sc[(scores)]
+  sc --> cmp[comparaison appariee]
+  sc --> ui[tableau de bord]
+  run -.->|OpenAI-compatible| llm[ollama-central / vLLM]
+  ev  -.->|OpenAI-compatible| llm
+  run --> pg[(pgvector)]
 ```
 
-> Détails : [documentation/architecture.md](documentation/architecture.md)
+Deux identités distinctes, et la distinction fait gagner des heures de GPU :
 
-## Documentation
-
-| Document | Contenu |
-|---|---|
-| [architecture.md](documentation/architecture.md) | Services, flux de bout en bout, décisions, réseaux/volumes |
-| [SECURITY.md](documentation/SECURITY.md) | Secrets, isolation réseau, dépendances, risques connus |
-| [STORAGE.md](documentation/STORAGE.md) | Schéma `films`, index vectoriel, volumes persistants |
-| [services/ollama.md](documentation/services/ollama.md) | Serveur d'inférence Ollama |
-| [services/db.md](documentation/services/db.md) | PostgreSQL + pgvector |
-| [services/rag-python.md](documentation/services/rag-python.md) | Application Streamlit |
-| [QUICKSTART.md](QUICKSTART.md) | Démarrage rapide pas à pas |
-
-## Prérequis
-
-- **Docker** et **Docker Compose**
-- **NVIDIA Container Toolkit** (recommandé — une réservation GPU nvidia est déclarée
-  dans le compose ; l'exécution CPU reste possible mais lente)
+- `hash()` — identité d'une configuration complète. Deux runs de même hash sont
+  comparables, les autres non.
+- `index_hash()` — identité de l'index de corpus, fonction du seul couple
+  (chunking, embedder). Comparer `top_k=5` et `top_k=10` **ne réindexe pas** les
+  609 documents. Une matrice de 8 configurations ne construit que 2 index.
 
 ## Démarrage
 
-Le projet nécessite un fichier `.env` à la racine (voir [QUICKSTART.md](QUICKSTART.md)
-pour le contenu minimal ; aucun `.env.example` n'est versionné).
+Prérequis : `make up` dans `~/mes_projets/llm-service` — c'est lui qui fournit
+l'Ollama central et le réseau Docker `llm-net`.
 
 ```bash
-docker compose up -d --build
+docker compose up -d db
+uv sync --extra ui
+cp .env.example .env
+uv run ragbench db init
+uv run ragbench doctor
 ```
 
-Cette commande démarre Ollama (et télécharge `phi4-mini` + `nomic-embed-text`),
-initialise PostgreSQL, puis lance l'application (qui attend que les modèles soient prêts).
+Puis une première campagne :
 
-| Service | URL | Note |
+```bash
+curl -sSL -o data/raw/corpus.json https://huggingface.co/datasets/yixuantt/MultiHopRAG/resolve/main/corpus.json
+curl -sSL -o data/raw/MultiHopRAG.json https://huggingface.co/datasets/yixuantt/MultiHopRAG/resolve/main/MultiHopRAG.json
+uv run ragbench dataset load multihop-rag --sample 200
+uv run ragbench run configs/baseline.yml --dataset multihop-rag
+uv run ragbench eval run 1
+```
+
+Tableau de bord : `docker compose up -d ui` puis <http://localhost:8502>.
+
+## Commandes
+
+| Commande | Rôle |
+|---|---|
+| `ragbench doctor` | Postgres, pgvector et modèles disponibles — à lancer avant toute campagne |
+| `ragbench dataset load <nom> --sample N` | Charge un corpus, échantillon stratifié déterministe |
+| `ragbench config matrix <fichier>` | Développe une matrice et annonce combien d'index seront construits |
+| `ragbench run <config> [--matrix]` | Exécute une campagne |
+| `ragbench eval run <id> -e <évaluateur>` | Applique des évaluateurs à un run existant |
+| `ragbench show <id>` | Métriques d'un run avec intervalles de confiance |
+| `ragbench compare <A> <B>` | Test apparié entre deux runs |
+| `ragbench leaderboard` | Classement des runs sur une métrique |
+
+## Corpus
+
+**MultiHop-RAG** (609 articles, 2 556 questions) est le corpus principal, choisi
+parce qu'il porte les **passages de référence** de chaque question — les
+métriques de retrieval sont donc calculables sans juge LLM — et parce qu'il
+contient **301 questions délibérément sans réponse**, ce qui permet de mesurer
+le *negative rejection*.
+
+**HotpotQA** est présent au format très différent, pour vérifier que la couche
+dataset est réellement pluggable. Brancher un corpus à soi revient à écrire une
+fonction qui renvoie un `LoadedDataset` — rien d'autre ne change.
+
+## Évaluateurs
+
+| Plugin | Apport propre | Coût |
 |---|---|---|
-| Application Streamlit | http://localhost:8502 | Interface principale (chat RAG) |
-| Jupyter Notebook | http://localhost:8888 | Sans jeton — usage local uniquement |
-| API Ollama | http://localhost:11435 | Port hôte par défaut (`OLLAMA_PORT`), voir note |
-| PostgreSQL | localhost:5432 | Accès SQL direct |
+| `native.ir` | recall@k, nDCG@k, MRR au niveau document | gratuit, déterministe |
+| `native.answer` | exact match, containment, negative rejection, accuracy par type | gratuit, déterministe |
+| `native.nuggets` | couverture des faits de référence par les passages remontés | gratuit en mode lexical |
+| `native.erag` | utilité réelle de chaque passage (Salemi & Zamani, SIGIR 2024) | `top_k` appels/question |
+| `native.claims` | attribution de l'erreur : générateur ou retriever ? | plusieurs appels/question |
+| `ragas` | les 4 métriques canoniques, avec taux de couverture | extra `--extra ragas` |
+| `deepeval` | seuils pass/fail, donc non-régression en CI | extra `--extra deepeval` |
 
-> Le port hôte Ollama vaut `${OLLAMA_PORT:-11435}` (défaut **11435**) mappé vers `11434`
-> interne. La valeur effective dépend de votre `.env`.
-
-## Configuration
-
-Variables lues dans `.env` (racine) :
-
-| Variable | Défaut | Effet |
-|---|---|---|
-| `DB_HOST` | `db` | Hôte PostgreSQL (nom du service) |
-| `DB_PORT` | `5432` | Port PostgreSQL |
-| `DB_USER` | `postgres` | Utilisateur applicatif |
-| `DB_PASSWORD` | `postgres` | Mot de passe applicatif |
-| `DB_NAME` | `rag_db` | Base cible |
-| `POSTGRES_USER` | `postgres` | Superutilisateur créé au boot de l'image |
-| `POSTGRES_PASSWORD` | `postgres` | Mot de passe de ce compte |
-| `POSTGRES_DB` | `rag_db` | Base créée au premier démarrage |
-| `OLLAMA_HOST` | `http://ollama:11434` | URL de l'API Ollama utilisée par l'app |
-| `OLLAMA_PORT` | `11435` | Port hôte mappé vers `11434` (défini dans `docker-compose.yml`) |
-
-## Fonctionnalités
-
-- **Chat RAG** : posez une question (« Quel film parle de rêves ? ») et obtenez une
-  réponse générée par l'IA + les sources.
-- **Performance** : *connection pool* psycopg2 (1→10) pour une réactivité instantanée.
-- **Robustesse** : démarrage sécurisé (attente du téléchargement des modèles).
-- **Gestion** : import CSV (`title`, `synopsis`) et ajout manuel de films depuis la
-  sidebar.
+Un framework absent apparaît dans `ragbench eval list` avec sa raison, il ne
+casse pas le banc : leurs contraintes de version entrent régulièrement en
+conflit entre elles.
 
 ## Tests
 
-Aucun test automatisé n'est présent dans le dépôt à ce jour (voir la section
-« Limites » de [architecture.md](documentation/architecture.md#8-limites-connues--pistes)).
-
-## Structure du projet
-
-```text
-RAG_Ollama_Streamlit/
-├── .env                    # Configuration et secrets (dans .gitignore mais versionné — voir SECURITY.md)
-├── docker-compose.yml      # Orchestration des 3 services
-├── data/
-│   └── films.csv           # Jeu de données initial
-├── db/
-│   └── init.sql            # Init SQL (extension vector + table films)
-├── ollama/
-│   └── entrypoint.sh       # Boot Ollama + pull des modèles
-├── python/                 # Service rag-python
-│   ├── dockerfile          # Image python:3.11-slim
-│   ├── entrypoint.sh       # Attente deps + init + Streamlit/Jupyter
-│   ├── initialize_db.py    # Création BDD/table/index + chargement CSV
-│   ├── streamlit_app.py    # Application RAG + chat
-│   └── requirements.txt    # Dépendances Python
-├── documentation/          # Documentation technique (cette doc)
-├── QUICKSTART.md           # Démarrage rapide
-└── README.md
+```bash
+uv run pytest -m "not regression"
 ```
 
-## Licences & composants
-
-| Composant | Rôle | Licence |
-|---|---|---|
-| Ollama | Serveur LLM local | MIT |
-| `phi4-mini` (Microsoft Phi-4) | LLM génération / nettoyage requête | MIT `<à confirmer selon le tag téléchargé>` |
-| `nomic-embed-text` (Nomic AI) | Embeddings 768d | Apache-2.0 `<à confirmer selon le tag téléchargé>` |
-| PostgreSQL | Base de données relationnelle | PostgreSQL License (open-source) |
-| pgvector | Extension recherche vectorielle | PostgreSQL License |
-| Streamlit | Interface web | Apache-2.0 |
-| psycopg2-binary | Driver PostgreSQL | LGPL-3.0 |
-| pandas | Manipulation de données | BSD-3-Clause |
-| requests | Client HTTP | Apache-2.0 |
-| numpy | Calcul numérique | BSD-3-Clause |
-| Jupyter / notebook | Environnement notebook | BSD-3-Clause |
-| Python | Runtime | PSF License |
-| **Ce projet** | Code applicatif | MIT — Copyright (c) 2026 floSa |
-
-> Les licences des modèles dépendent du tag effectivement téléchargé par Ollama et sont
-> à vérifier sur leurs pages respectives. Aucun fichier `LICENSE` n'est présent dans le
-> dépôt à ce jour.
+Les tests marqués `regression` lisent la base et vérifient des planchers de
+qualité sur le dernier run évalué. Ils portent sur la **borne basse** de
+l'intervalle de confiance, pour échouer quand une régression est établie et non
+quand le tirage a été défavorable.

@@ -1,5 +1,11 @@
 # Matrice d'experience : quelle strategie de recherche paie ?
 #
+# AVERTISSEMENT — les runs produits par ce fichier AVANT les correctifs du
+# 26/07 sur la recherche lexicale et le reranking sont invalides pour les
+# variantes lexical-k5, hybrid-k5 et dense-k5-rerank. Ces trois-la sont
+# rejouees par configs/experiments/retrieval-fix.yml. Les cinq autres
+# n'utilisent ni l'une ni l'autre et restent valables.
+#
 # Les variantes sont fusionnees (merge profond) sur `base`, donc chacune ne
 # declare que ce qu'elle change. Toutes partagent le meme chunking, donc le
 # meme index_hash : le corpus n'est encode qu'UNE fois pour les 6 configs.

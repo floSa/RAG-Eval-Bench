@@ -1,0 +1,57 @@
+# Rejeu des trois configs de configs/experiments/retrieval.yml qui avaient
+# ete faussees par deux bugs, corriges depuis :
+#
+#   lexical-k5       plainto_tsquery assemblait les termes avec AND : aucune
+#                    question de 30 mots ne trouvait le moindre passage, la
+#                    recherche renvoyait zero resultat sur les 200 questions.
+#   hybrid-k5        fusionne dense + lexical, donc contaminee par le meme bug.
+#   dense-k5-rerank  le reranker renvoyait une chaine vide (budget de tokens
+#                    consomme par le raisonnement) et ne reordonnait rien.
+#
+# Les cinq autres configs de la matrice n'utilisent ni la recherche lexicale
+# ni le reranking : leurs resultats restent valables et n'ont pas ete rejoues.
+#
+#   uv run ragbench run configs/experiments/retrieval-fix.yml --matrix \
+#     --dataset multihop-rag
+
+base:
+  name: retrieval-fix
+  chunking:
+    strategy: recursive
+    chunk_size: 1000
+    chunk_overlap: 150
+    header_fields: [title, source, published_at]
+    header_scope: chunk
+  retrieval:
+    mode: dense
+    top_k: 5
+    fetch_k: 20
+    max_per_document: 2
+  generation:
+    prompt_template: default
+    temperature: 0.0
+    thinking: false
+  models:
+    generator: gemma4:e4b
+    embedder: nomic-embed-text:latest
+    judge: gemma4:e4b
+
+variants:
+  - name: lexical-k5
+    description: Recherche plein-texte seule, requete en OU de lexemes.
+    retrieval:
+      mode: lexical
+
+  - name: hybrid-k5
+    description: Fusion RRF dense + lexical.
+    retrieval:
+      mode: hybrid
+
+  - name: dense-k5-rerank
+    description: >
+      20 candidats reordonnes par le LLM, 5 gardes. De loin la config la plus
+      chere de la matrice : 20 appels de jugement par question s'ajoutent a
+      la generation.
+    retrieval:
+      rerank: llm
+      fetch_k: 20
