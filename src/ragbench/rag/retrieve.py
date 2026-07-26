@@ -41,6 +41,15 @@ class Context:
         }
 
 
+class RerankFailure(RuntimeError):
+    """Le reranker n'a produit aucun score exploitable.
+
+    Levee plutot qu'avalee : un reranking qui echoue en silence produit
+    exactement les memes chiffres qu'un reranking inutile, et on conclut
+    « ca n'apporte rien » alors que ca n'a jamais tourne.
+    """
+
+
 @dataclass
 class RetrievalResult:
     contexts: list[Context]
@@ -203,18 +212,38 @@ async def _llm_rerank(
         role="reranker",
         temperature=0.0,
         max_tokens=4,
+        # thinking=False est OBLIGATOIRE ici, pas une optimisation.
+        # Avec le raisonnement actif, les 4 tokens de budget partent
+        # entierement dans la reflexion et le modele renvoie une chaine
+        # VIDE. Tous les candidats recoivent alors le score 0, le tri est
+        # stable, et le reranking devient un no-op silencieux qui coute
+        # fetch_k appels LLM par question sans rien changer au classement.
+        thinking=False,
     )
 
     scored: list[tuple[float, Context]] = []
+    n_unparsed = 0
     for ctx, comp in zip(candidates, completions):
-        if comp is None:
+        digits = [ch for ch in comp.text if ch.isdigit()] if comp else []
+        if not digits:
             # Echec du reranker : on retombe sur le rang d'origine plutot
             # que d'ejecter le passage, pour ne pas confondre "mauvais
-            # passage" et "juge en echec".
+            # passage" et "juge en echec". Le score negatif place ces
+            # passages apres tous les passages notes, en preservant leur
+            # ordre relatif.
+            n_unparsed += 1
             scored.append((-1.0 / ctx.rank, ctx))
             continue
-        digits = [ch for ch in comp.text if ch.isdigit()]
-        scored.append((float(digits[0]) if digits else 0.0, ctx))
+        scored.append((float(digits[0]), ctx))
+
+    if n_unparsed == len(candidates):
+        # Aucun verdict exploitable : le reranking n'a rien reordonne. Le
+        # signaler evite de conclure « le reranking n'apporte rien » alors
+        # qu'il n'a simplement pas fonctionne.
+        raise RerankFailure(
+            f"le reranker n'a produit aucun score exploitable sur "
+            f"{len(candidates)} passages (modele {cfg.models.judge})"
+        )
 
     scored.sort(key=lambda t: t[0], reverse=True)
     return [
