@@ -492,6 +492,57 @@ def compare_runs(
         )
 
 
+@app.command("report")
+def report_cmd(
+    runs: list[int] = typer.Argument(None, help="Identifiants de runs. Defaut : les 10 derniers."),
+    metrics: str = typer.Option(
+        "native.ir/recall@3,native.ir/hit_rate@3,native.ir/mrr,"
+        "native.nuggets/nugget_recall,native.answer/contains,native.answer/false_abstention",
+        help="Metriques a afficher, separees par des virgules.",
+    ),
+) -> None:
+    """Tableau comparatif de plusieurs runs, une ligne par run.
+
+    Volontairement sans test statistique : c'est une vue d'ensemble pour
+    reperer ou regarder, pas pour conclure. Deux valeurs proches ne sont
+    pas departagees ici — passer par `ragbench compare`.
+    """
+    wanted = [m.strip() for m in metrics.split(",") if m.strip()]
+
+    with db.connect() as conn:
+        if runs:
+            ids = list(runs)
+        else:
+            ids = [
+                r["id"]
+                for r in conn.execute(
+                    "SELECT id FROM runs WHERE status = 'completed' ORDER BY id DESC LIMIT 10"
+                ).fetchall()
+            ][::-1]
+        names = {
+            r["id"]: r["name"]
+            for r in conn.execute(
+                "SELECT r.id, c.name FROM runs r JOIN configs c ON c.hash = r.config_hash "
+                "WHERE r.id = ANY(%s)",
+                (ids,),
+            ).fetchall()
+        }
+
+    table = Table("run", "config", *[escape(m.split("/")[-1]) for m in wanted])
+    for run_id in ids:
+        summary = runner.summarize(run_id)
+        cells = []
+        for metric in wanted:
+            ci = summary.metrics.get(metric)
+            cells.append(f"{ci.mean:.3f}" if ci else "[dim]—[/]")
+        table.add_row(str(run_id), names.get(run_id, "?"), *cells)
+    console.print(table)
+    console.print(
+        "[dim]Vue d'ensemble sans test statistique : deux valeurs proches ne sont "
+        "pas departagees. Utiliser `ragbench compare A B`.[/]"
+    )
+
+
 @app.command("leaderboard")
 def leaderboard_cmd(
     dataset: str = typer.Option("multihop-rag"),
