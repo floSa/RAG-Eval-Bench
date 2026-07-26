@@ -31,6 +31,7 @@ base:
     prompt_template: default
     temperature: 0.0
     thinking: false
+    max_tokens: 512
   models:
     generator: gemma4:e4b
     embedder: nomic-embed-text:latest

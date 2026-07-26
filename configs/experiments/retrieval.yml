@@ -29,6 +29,13 @@ base:
     prompt_template: default
     temperature: 0.0
     thinking: false
+    # Declare explicitement, meme si c'est la valeur par defaut du code.
+    # Ce fichier ne le precisait pas et heritait de 1024, la ou
+    # abstention.yml declarait 512 : deux matrices qu'on croyait partager
+    # leur reference avaient en realite des hash differents. Le banc l'a
+    # signale, mais la lecon vaut d'etre appliquee — une config
+    # d'experience declare TOUT ce qu'elle utilise, elle n'herite pas.
+    max_tokens: 512
   models:
     generator: gemma4:e4b
     embedder: nomic-embed-text:latest
