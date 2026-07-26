@@ -120,3 +120,36 @@ class TestRequiredN:
         """Detecter 10 points d'ecart autour de 50 % doit demander quelques
         centaines de questions — le repere qui justifie n=200."""
         assert 100 < required_n(0.10) < 1000
+
+
+class TestZoneLimite:
+    """L'intervalle vient d'un bootstrap, la p-value d'un test de
+    permutation : deux procedures differentes qui peuvent diverger juste au
+    seuil. C'est precisement la zone ou l'on prend les mauvaises decisions
+    avec assurance, donc elle doit etre nommee."""
+
+    def test_accord_franc_non_limite(self):
+        res = paired_bootstrap([0.0] * 100, [1.0] * 100, n_boot=1000)
+        assert res.significant
+        assert not res.borderline
+
+    def test_absence_d_effet_non_limite(self):
+        vals = [0.0, 1.0] * 50
+        res = paired_bootstrap(vals, vals, n_boot=1000)
+        assert not res.significant
+        assert not res.borderline
+
+    def test_desaccord_detecte(self):
+        """borderline vaut True des que les deux criteres divergent, quel
+        que soit le sens du desaccord."""
+        from ragbench.stats import Comparison
+
+        c = Comparison(
+            mean_a=0.5, mean_b=0.55, delta=0.05,
+            ci_low=0.001, ci_high=0.099,   # exclut zero
+            p_value=0.063,                  # mais p > 0.05
+            n_pairs=177, n_better=40, n_worse=30, n_tied=107,
+        )
+        assert c.significant
+        assert c.borderline
+        assert "LIMITE" in c.verdict()

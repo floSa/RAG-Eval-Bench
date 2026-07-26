@@ -70,7 +70,29 @@ class Comparison:
         """
         return (self.ci_low > 0) or (self.ci_high < 0)
 
+    @property
+    def borderline(self) -> bool:
+        """Les deux tests ne disent pas la meme chose.
+
+        L'intervalle vient d'un bootstrap, la p-value d'un test de
+        permutation : ce sont deux procedures differentes, qui peuvent
+        diverger juste au seuil. Quand c'est le cas, la lecture honnete
+        n'est pas « significatif » mais « a la limite, a reproduire sur un
+        echantillon plus grand ».
+
+        Le signaler est le contraire d'un detail : c'est exactement dans
+        cette zone qu'on prend les mauvaises decisions avec assurance.
+        """
+        return self.significant != (self.p_value < 0.05)
+
     def verdict(self) -> str:
+        if self.borderline:
+            return (
+                f"ecart A LA LIMITE ({self.delta:+.4f}, IC95 "
+                f"[{self.ci_low:+.4f}, {self.ci_high:+.4f}], p={self.p_value:.4f}) — "
+                f"l'intervalle et la p-value ne concordent pas, a reproduire "
+                f"sur un echantillon plus grand avant d'en tirer une decision"
+            )
         if not self.significant:
             return (
                 f"ecart non concluant ({self.delta:+.4f}, IC95 "

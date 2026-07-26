@@ -461,12 +461,19 @@ def compare_runs(
         console.print("[yellow]aucune metrique commune aux deux runs[/]")
         return
 
-    table = Table("Metrique", "A", "B", "Ecart", "IC 95 % de l'ecart", "p", "n", "")
+    table = Table("Metrique", "A", "B", "Ecart", "IC 95 % de l'ecart", "p", "n", "Verdict")
     n_significant = 0
+    n_borderline = 0
     for res in results:
         c = res.comparison
-        if c.significant:
+        if c.borderline:
+            n_borderline += 1
+            verdict = "[yellow]limite[/]"
+        elif c.significant:
             n_significant += 1
+            verdict = "[green]oui[/]"
+        else:
+            verdict = "[dim]non[/]"
         table.add_row(
             escape(f"{res.evaluator}/{res.metric}"),
             f"{c.mean_a:.4f}",
@@ -475,14 +482,20 @@ def compare_runs(
             f"[{c.ci_low:+.4f}, {c.ci_high:+.4f}]",
             f"{c.p_value:.3f}",
             str(c.n_pairs),
-            "[green]oui[/]" if c.significant else "[dim]non[/]",
+            verdict,
         )
     console.print(table)
     console.print(
-        f"[dim]{n_significant}/{len(results)} ecarts dont l'IC exclut zero. "
+        f"[dim]{n_significant}/{len(results)} ecarts concluants. "
         f"Avec {len(results)} comparaisons a 5 %, environ "
         f"{len(results) * 0.05:.1f} faux positif(s) sont attendus par hasard.[/]"
     )
+    if n_borderline:
+        console.print(
+            f"[yellow]{n_borderline} ecart(s) « limite » : l'intervalle de confiance "
+            f"et la p-value ne concordent pas. A reproduire sur un echantillon plus "
+            f"grand avant d'en tirer une decision.[/]"
+        )
 
     dropped = max((r.n_dropped_a + r.n_dropped_b) for r in results)
     if dropped:

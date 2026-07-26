@@ -99,7 +99,14 @@ def comparison_table(run_a: int, run_b: int) -> pd.DataFrame:
                 "B_gagne": c.n_better,
                 "A_gagne": c.n_worse,
                 "ex_aequo": c.n_tied,
-                "concluant": c.significant,
+                # Trois etats et non deux : « limite » signale que
+                # l'intervalle bootstrap et le test de permutation ne
+                # concordent pas. C'est la zone ou l'on decide a tort avec
+                # assurance, elle merite son propre libelle.
+                "verdict": (
+                    "limite" if c.borderline else ("concluant" if c.significant else "non")
+                ),
+                "concluant": c.significant and not c.borderline,
             }
         )
     return pd.DataFrame(rows)
