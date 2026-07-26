@@ -46,6 +46,12 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    # Les tests de non-regression lisent la base et sont ignores si aucune
+    # campagne n'a tourne. Les separer permet de lancer la suite unitaire
+    # seule : uv run pytest -m "not regression"
+    "regression: garde-fous lus depuis la base (necessitent un run evalue)",
+]
 
 [dependency-groups]
 dev = [

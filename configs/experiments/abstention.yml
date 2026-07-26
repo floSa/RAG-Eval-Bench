@@ -1,0 +1,69 @@
+# Matrice d'experience : l'abstention est-elle le vrai goulot ?
+#
+# Motivee par la premiere campagne complete (200 questions) :
+#   false_abstention = 0,73  -> le systeme renonce sur 3 questions
+#                               repondables sur 4
+#   negative_rejection = 1,00 -> il refuse aussi toutes les questions sans
+#                               reponse, ce qui a l'air parfait
+#
+# Les deux chiffres ensemble disent l'essentiel : un negative rejection de
+# 1,00 n'a aucune valeur quand il est obtenu en refusant TOUT. C'est la
+# raison pour laquelle le banc ne publie jamais l'un sans l'autre.
+#
+# Et quand le systeme repond, il a raison dans ~60 % des cas (0,158 / 0,266).
+# Le probleme n'est donc pas la qualite des reponses, c'est leur rarete.
+#
+# Trois leviers testes separement, pour ne pas confondre leurs effets.
+
+base:
+  name: abstention-sweep
+  chunking:
+    strategy: recursive
+    chunk_size: 1000
+    chunk_overlap: 150
+    header_fields: [title, source, published_at]
+    header_scope: chunk
+  retrieval:
+    mode: dense
+    top_k: 5
+    fetch_k: 20
+    max_per_document: 2
+  generation:
+    prompt_template: default
+    temperature: 0.0
+    max_tokens: 512
+    allow_abstain: true
+    thinking: false
+  models:
+    generator: gemma4:e4b
+    embedder: nomic-embed-text:latest
+    judge: gemma4:e4b
+
+variants:
+  - name: abstain-reference
+    description: La baseline, pour l'appariement.
+
+  - name: abstain-off
+    description: >
+      Sans consigne d'abstention. Le gain d'accuracy attendu n'est pas
+      gratuit : il detruit mecaniquement le negative_rejection sur les
+      questions sans reponse. A lire imperativement avec les deux metriques.
+    generation:
+      allow_abstain: false
+
+  - name: cited
+    description: >
+      Citation obligatoire du passage. Hypothese : forcer l'attribution
+      oblige le modele a regarder le contexte au lieu de conclure trop vite
+      qu'il n'y trouve rien.
+    generation:
+      prompt_template: cited
+
+  - name: decompose
+    description: >
+      Le modele liste d'abord les faits intermediaires, puis conclut. Cible
+      les questions multi-hop, ou l'echec vient souvent d'un raccourci de
+      raisonnement plutot que d'un manque de contexte.
+    generation:
+      prompt_template: decompose
+      max_tokens: 1024
