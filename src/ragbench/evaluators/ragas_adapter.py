@@ -157,7 +157,26 @@ class RagasEvaluator:
             )
         frame = result.to_pandas()
 
+        # Reapparier sur le texte de la question plutot que sur la position.
+        # Ragas preserve l'ordre aujourd'hui, mais DeepEval ne le fait PAS en
+        # mode asynchrone, et une mauvaise attribution de scores est
+        # invisible : les moyennes restent plausibles, seul le drill-down
+        # montre une reponse a cote du verdict d'une autre question. Le cout
+        # de la precaution est nul, celui de l'erreur est un run entier.
+        by_input = {p["question"]: p for p in usable}
+        rows = frame.to_dict("records")
+        aligned = [(by_input.get(row.get("user_input")), row) for row in rows]
+        n_unmatched = sum(1 for prediction, _ in aligned if prediction is None)
+
         out: list[Score] = []
+        if n_unmatched:
+            out.append(
+                Score(
+                    "unmatched_results", float(n_unmatched), None,
+                    {"note": "lignes ragas non rattachables a une question par leur texte"},
+                )
+            )
+
         for metric in metrics:
             column = metric.name
             if column not in frame.columns:
@@ -170,7 +189,10 @@ class RagasEvaluator:
                 continue
 
             valid: list[float] = []
-            for prediction, value in zip(usable, frame[column].tolist()):
+            for prediction, row in aligned:
+                if prediction is None:
+                    continue
+                value = row.get(column)
                 if value is None or (isinstance(value, float) and math.isnan(value)):
                     # Jugement non parsable : trace explicitement, pas ignore.
                     out.append(

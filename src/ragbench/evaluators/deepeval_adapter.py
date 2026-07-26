@@ -52,7 +52,14 @@ class LocalJudge(DeepEvalBaseLLM):
     """
 
     def __init__(self, model: str) -> None:
-        self.model = model
+        # Le nom du modele est garde dans model_id et surtout PAS dans
+        # self.model : DeepEvalBaseLLM.__init__ affecte
+        # `self.model = self.load_model()` et ecraserait la chaine par le
+        # client OpenAI. L'erreur qui en decoule est indirecte et peu
+        # lisible — « Object of type OpenAI is not JSON serializable » au
+        # moment du premier appel, parce que le client part comme nom de
+        # modele dans le corps de la requete.
+        self.model_id = model
         settings = default_settings
         self._sync = OpenAI(
             base_url=settings.llm_base_url,
@@ -70,7 +77,7 @@ class LocalJudge(DeepEvalBaseLLM):
         return self._sync
 
     def get_model_name(self) -> str:
-        return f"local:{self.model}"
+        return f"local:{self.model_id}"
 
     def _coerce(self, text: str, schema: Any) -> Any:
         if schema is None:
@@ -87,7 +94,7 @@ class LocalJudge(DeepEvalBaseLLM):
 
     def generate(self, prompt: str, schema: Any = None) -> Any:
         response = self._sync.chat.completions.create(
-            model=self.model,
+            model=self.model_id,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
         )
@@ -95,7 +102,7 @@ class LocalJudge(DeepEvalBaseLLM):
 
     async def a_generate(self, prompt: str, schema: Any = None) -> Any:
         response = await self._async.chat.completions.create(
-            model=self.model,
+            model=self.model_id,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
         )
@@ -161,7 +168,21 @@ class DeepEvalEvaluator:
         per_metric: dict[str, list[float]] = {}
         per_metric_pass: dict[str, list[bool]] = {}
 
-        for prediction, case_result in zip(usable, getattr(results, "test_results", results)):
+        # DEEPEVAL NE RENVOIE PAS SES RESULTATS DANS L'ORDRE D'ENTREE.
+        # En mode asynchrone, les cas reviennent dans leur ordre de
+        # COMPLETION. Un zip positionnel attribuerait donc les scores aux
+        # mauvaises questions — silencieusement, avec des moyennes
+        # parfaitement plausibles et un drill-down qui montre la reponse
+        # d'une question a cote du verdict d'une autre. On reapparie sur le
+        # texte de la question.
+        by_input = {p["question"]: p for p in usable}
+        n_unmatched = 0
+
+        for case_result in getattr(results, "test_results", results):
+            prediction = by_input.get(getattr(case_result, "input", None))
+            if prediction is None:
+                n_unmatched += 1
+                continue
             for metric_data in getattr(case_result, "metrics_data", []) or []:
                 key = (metric_data.name or "metric").lower().replace(" ", "_")
                 if metric_data.score is None:
@@ -181,6 +202,20 @@ class DeepEvalEvaluator:
                         {"reason": (metric_data.reason or "")[:600], "passed": bool(metric_data.success)},
                     )
                 )
+
+        if n_unmatched:
+            out.append(
+                Score(
+                    "unmatched_results",
+                    float(n_unmatched),
+                    None,
+                    {
+                        "note": "resultats DeepEval non rattachables a une question "
+                                "par leur texte — scores correspondants ignores plutot "
+                                "que mal attribues"
+                    },
+                )
+            )
 
         for key, values in per_metric.items():
             passes = per_metric_pass.get(key, [])
