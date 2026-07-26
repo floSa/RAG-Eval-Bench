@@ -351,14 +351,41 @@ def eval_list() -> None:
 def eval_run(
     run_id: int,
     evaluator: list[str] = typer.Option(
-        None, "--evaluator", "-e", help="Evaluateur a appliquer (repetable). Defaut : tous les natifs."
+        None, "--evaluator", "-e",
+        help="Evaluateur a appliquer (repetable). Defaut : les natifs gratuits.",
+    ),
+    option: list[str] = typer.Option(
+        None, "--option", "-o",
+        help="Reglage d'evaluateur, format cle=valeur (repetable). "
+             "Ex. -o max_samples=40 -o nugget_mode=judge",
     ),
 ) -> None:
-    """Applique des evaluateurs a un run existant."""
-    names = evaluator or [n for n in evaluators.available() if n.startswith("native.")]
+    """Applique des evaluateurs a un run existant.
+
+    Par defaut, seuls les evaluateurs DETERMINISTES sont lances : ils sont
+    gratuits et reproductibles. Les evaluateurs a base de juge (native.claims,
+    native.erag, ragas, deepeval) doivent etre demandes explicitement, parce
+    qu'ils coutent plusieurs appels LLM par question.
+    """
+    names = evaluator or ["native.ir", "native.answer", "native.nuggets"]
+
+    options: dict[str, object] = {}
+    for item in option or []:
+        key, _, value = item.partition("=")
+        if not value:
+            raise typer.BadParameter(f"option mal formee : {item} (attendu cle=valeur)")
+        # Conversion souple : un max_samples doit arriver en entier cote
+        # evaluateur, pas en chaine.
+        try:
+            options[key] = int(value)
+        except ValueError:
+            try:
+                options[key] = float(value)
+            except ValueError:
+                options[key] = value
 
     async def _run() -> None:
-        reports = await runner.evaluate_run(run_id, names)
+        reports = await runner.evaluate_run(run_id, names, options=options)
         for rep in reports:
             if rep.skipped:
                 console.print(f"[yellow]{rep.evaluator} : ignore — {'; '.join(rep.problems)}[/]")
