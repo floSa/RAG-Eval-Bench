@@ -14,6 +14,32 @@ d'extension documente. On ne passe PAS par les modeles OpenAI integres :
 ils supposent un endpoint qui garantit la sortie structuree, ce qu'Ollama
 ne fait pas de maniere fiable avec un petit modele.
 
+TROIS OBSERVATIONS FAITES EN LE BRANCHANT POUR DE VRAI. Elles valent pour
+n'importe quel juge local, pas seulement pour DeepEval.
+
+1. LE JUGE N'EST PAS REPRODUCTIBLE. Deux passes identiques, memes questions,
+   temperature 0 : faithfulness 1.000 puis 0.583. Avec une graine fixee, la
+   variation tombe a 0.633 / 0.667 — beaucoup mieux, mais pas nulle
+   (l'echantillon de mesure ne fait que 5 questions, donc une seule question
+   qui bascule deplace la moyenne de 0,2). Consequence pratique : un ecart
+   mesure par un juge doit etre plus grand que sa propre variabilite avant
+   qu'on en conclue quoi que ce soit, et les metriques DETERMINISTES du banc
+   (native.ir, native.answer) restent la reference.
+
+2. UN PETIT JUGE NE SAIT PAS TOUT JUGER. llama3.2:3b produit faithfulness
+   et answer_relevancy, mais AUCUN score exploitable pour
+   contextual_precision et contextual_recall : leurs schemas JSON sont trop
+   profonds pour un modele de 3 milliards de parametres. Ces metriques sont
+   publiees avec une couverture de 0 plutot qu'omises — une metrique absente
+   se lirait comme une metrique non demandee.
+
+3. LE CHOIX DU JUGE EST UN ARBITRAGE, PAS UN DETAIL. gemma4:e4b juge mieux
+   mais raisonne a chaque appel : 12 a 30 s par jugement, soit plus de 2 min
+   par question sur les 4 metriques — inutilisable au-dela de quelques
+   dizaines de questions. llama3.2:3b juge en ~1 s mais echoue sur la moitie
+   des metriques. C'est exactement le genre d'arbitrage que le banc doit
+   rendre visible au lieu de le laisser subir.
+
 Installation :  uv sync --extra deepeval
 """
 
@@ -24,7 +50,7 @@ import re
 from typing import Any
 
 from deepeval import evaluate as deepeval_evaluate  # noqa: E402
-from deepeval.evaluate.configs import AsyncConfig, DisplayConfig  # noqa: E402
+from deepeval.evaluate.configs import AsyncConfig, DisplayConfig, ErrorConfig  # noqa: E402
 from deepeval.metrics import (  # noqa: E402
     AnswerRelevancyMetric,
     ContextualPrecisionMetric,
@@ -97,6 +123,13 @@ class LocalJudge(DeepEvalBaseLLM):
             model=self.model_id,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
+            # Graine fixee : sans elle, deux passes du MEME juge sur les
+            # MEMES questions a temperature 0 donnent des scores differents.
+            # Mesure sur 5 questions : faithfulness 1.000 puis 0.583. Un
+            # resultat de juge non reproductible ne peut fonder aucune
+            # conclusion, et la variabilite se confond avec l'effet qu'on
+            # cherche a mesurer.
+            seed=0,
         )
         return self._coerce(response.choices[0].message.content or "", schema)
 
@@ -105,6 +138,13 @@ class LocalJudge(DeepEvalBaseLLM):
             model=self.model_id,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
+            # Graine fixee : sans elle, deux passes du MEME juge sur les
+            # MEMES questions a temperature 0 donnent des scores differents.
+            # Mesure sur 5 questions : faithfulness 1.000 puis 0.583. Un
+            # resultat de juge non reproductible ne peut fonder aucune
+            # conclusion, et la variabilite se confond avec l'effet qu'on
+            # cherche a mesurer.
+            seed=0,
         )
         return self._coerce(response.choices[0].message.content or "", schema)
 
@@ -130,11 +170,28 @@ class DeepEvalEvaluator:
         judge = LocalJudge(ctx.config.models.judge)
         thresholds = {**DEFAULT_THRESHOLDS, **(ctx.options.get("thresholds") or {})}
 
+        # ignore_errors=True est indispensable avec un juge local.
+        #
+        # Les metriques de DeepEval exigent des sorties JSON structurees dont
+        # les schemas sont parfois profonds (ContextualPrecision en
+        # particulier). Un petit modele local produit reguliement du JSON
+        # legerement invalide, et sans cette option DeepEval leve — une seule
+        # sortie mal formee sur 200 questions ferait tomber toute
+        # l'evaluation.
+        #
+        # Avec l'option, l'echec devient un score MANQUANT, comptabilise dans
+        # la couverture publiee plus bas. C'est la bonne lecture : le juge n'a
+        # pas su trancher, ce n'est ni un bon ni un mauvais score, et une
+        # couverture qui s'effondre est en soi le signal qu'il faut un juge
+        # plus capable.
+        # NB : dans DeepEval 4.x, ignore_errors n'est plus un parametre des
+        # metriques mais un ErrorConfig passe a evaluate() — voir plus bas.
+        common = {"model": judge, "async_mode": True}
         metrics = [
-            FaithfulnessMetric(threshold=thresholds["faithfulness"], model=judge),
-            AnswerRelevancyMetric(threshold=thresholds["answer_relevancy"], model=judge),
-            ContextualPrecisionMetric(threshold=thresholds["contextual_precision"], model=judge),
-            ContextualRecallMetric(threshold=thresholds["contextual_recall"], model=judge),
+            FaithfulnessMetric(threshold=thresholds["faithfulness"], **common),
+            AnswerRelevancyMetric(threshold=thresholds["answer_relevancy"], **common),
+            ContextualPrecisionMetric(threshold=thresholds["contextual_precision"], **common),
+            ContextualRecallMetric(threshold=thresholds["contextual_recall"], **common),
         ]
 
         usable = [
@@ -161,7 +218,24 @@ class DeepEvalEvaluator:
             test_cases=cases,
             metrics=metrics,
             display_config=DisplayConfig(show_indicator=False, print_results=False),
-            async_config=AsyncConfig(run_async=True, max_concurrent=default_settings.llm_concurrency),
+            async_config=AsyncConfig(
+                run_async=True, max_concurrent=default_settings.llm_concurrency
+            ),
+            # ignore_errors=True est indispensable avec un juge local.
+            #
+            # Les metriques de DeepEval exigent des sorties JSON structurees
+            # dont les schemas sont parfois profonds (ContextualPrecision en
+            # particulier), et un petit modele local produit reguliement du
+            # JSON legerement invalide. Sans cette option, DeepEval leve : une
+            # seule sortie mal formee sur 200 questions fait tomber toute
+            # l'evaluation.
+            #
+            # Avec l'option, l'echec devient un score MANQUANT, comptabilise
+            # dans la couverture publiee plus bas. C'est la bonne lecture : le
+            # juge n'a pas su trancher, ce n'est ni un bon ni un mauvais score,
+            # et une couverture qui s'effondre est en soi le signal qu'il faut
+            # un juge plus capable.
+            error_config=ErrorConfig(ignore_errors=True),
         )
 
         out: list[Score] = []
@@ -212,6 +286,33 @@ class DeepEvalEvaluator:
                         "note": "resultats DeepEval non rattachables a une question "
                                 "par leur texte — scores correspondants ignores plutot "
                                 "que mal attribues"
+                    },
+                )
+            )
+
+        # Les metriques DEMANDEES mais qui n'ont produit aucune valeur
+        # exploitable doivent apparaitre explicitement. Omises, elles se
+        # liraient comme non demandees — alors qu'elles ont ete demandees et
+        # que le juge a echoue a les produire. Sur llama3.2:3b, c'est le cas
+        # de contextual_precision et contextual_recall, dont les schemas JSON
+        # sont trop profonds pour un modele de 3 milliards de parametres.
+        requested = {
+            getattr(m, "__name__", type(m).__name__).lower().replace(" ", "_")
+            for m in metrics
+        }
+        for key in sorted(requested - set(per_metric)):
+            out.append(
+                Score(
+                    f"mean_{key}",
+                    None,
+                    None,
+                    {
+                        "n_scored": 0,
+                        "n_submitted": len(usable),
+                        "coverage": 0.0,
+                        "judge": ctx.config.models.judge,
+                        "note": "aucun jugement exploitable — le juge n'a pas su "
+                                "produire la sortie structuree attendue",
                     },
                 )
             )

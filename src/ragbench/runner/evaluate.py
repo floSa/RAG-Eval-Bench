@@ -32,6 +32,8 @@ class EvalReport:
     elapsed_s: float
     problems: list[str] = field(default_factory=list)
     aggregates: dict[str, float] = field(default_factory=dict)
+    # Metriques demandees dont aucune question n'a pu etre notee.
+    empty: list[str] = field(default_factory=list)
     skipped: bool = False
 
 
@@ -73,6 +75,20 @@ async def evaluate_run(
     # qui l'a produit.
     cfg = PipelineConfig.model_validate({"name": run["config_name"], **run["payload"]})
 
+    # Seule exception : le JUGE peut etre remplace. C'est la manipulation
+    # centrale du projet — faire noter les MEMES predictions par plusieurs
+    # juges pour mesurer leur desaccord. Le pipeline evalue, lui, reste
+    # exactement celui qui a produit les predictions.
+    #
+    # Le nom du juge est reporte dans le detail de chaque score, donc deux
+    # jugements du meme run par deux juges differents restent distinguables
+    # en base sans ambiguite.
+    judge_override = options.get("judge") if options else None
+    if judge_override:
+        cfg = cfg.model_copy(
+            update={"models": cfg.models.model_copy(update={"judge": str(judge_override)})}
+        )
+
     async with LLMClient(settings) as llm:
         ctx = evaluators.EvalContext(
             predictions=predictions,
@@ -96,6 +112,13 @@ async def evaluate_run(
 
             scores = await evaluator.evaluate(ctx)
 
+            # Quand un juge est impose, il entre dans le NOM de l'evaluateur
+            # stocke. Sans ca, une seconde passe avec un autre juge ecraserait
+            # la premiere (la table scores est unique sur run/question/
+            # evaluateur/metrique) — et on perdrait precisement l'information
+            # qu'on cherchait : leur desaccord.
+            stored_name = f"{name}@{judge_override}" if judge_override else name
+
             with db.connect(settings) as conn:
                 db.insert_scores(
                     conn,
@@ -103,7 +126,7 @@ async def evaluate_run(
                     [
                         {
                             "question_id": s.question_id,
-                            "evaluator": name,
+                            "evaluator": stored_name,
                             "metric": s.metric,
                             "value": s.value,
                             "detail": s.detail,
@@ -116,7 +139,7 @@ async def evaluate_run(
             reports.append(
                 EvalReport(
                     run_id=run_id,
-                    evaluator=name,
+                    evaluator=stored_name,
                     n_scores=len(scores),
                     elapsed_s=time.perf_counter() - started,
                     problems=problems,
@@ -125,6 +148,19 @@ async def evaluate_run(
                         for s in scores
                         if s.question_id is None and s.value is not None
                     },
+                    # Metriques dont AUCUNE question n'a pu etre notee. Les
+                    # omettre les ferait disparaitre du rapport, et une
+                    # metrique absente se lit comme une metrique non demandee
+                    # — alors qu'elle a ete demandee et a echoue. C'est
+                    # precisement ce qu'il faut voir : le juge n'est pas
+                    # capable de produire ce jugement.
+                    empty=[
+                        s.metric
+                        for s in scores
+                        if s.question_id is None
+                        and s.value is None
+                        and s.metric.startswith("mean_")
+                    ],
                 )
             )
 

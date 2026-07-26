@@ -382,11 +382,20 @@ def eval_run(
         # evaluateur, pas en chaine.
         try:
             options[key] = int(value)
+            continue
         except ValueError:
-            try:
-                options[key] = float(value)
-            except ValueError:
-                options[key] = value
+            pass
+        try:
+            options[key] = float(value)
+            continue
+        except ValueError:
+            pass
+        # Une valeur avec virgules est une LISTE. Sans ca, elle arrive comme
+        # chaine et un evaluateur qui l'itere obtient ses caracteres un par
+        # un — avec un message d'erreur incomprehensible a l'arrivee.
+        options[key] = (
+            [v.strip() for v in value.split(",") if v.strip()] if "," in value else value
+        )
 
     async def _run() -> None:
         reports = await runner.evaluate_run(run_id, names, options=options)
@@ -404,6 +413,15 @@ def eval_run(
                 # seraient interpretes par Rich comme des balises de style et
                 # disparaitraient de l'affichage.
                 console.print(f"  {escape(metric):<40} {value:.4f}")
+            for metric in sorted(rep.empty):
+                # Une metrique demandee dont rien n'a pu etre note doit
+                # APPARAITRE. Omise, elle se lirait comme une metrique non
+                # demandee, et on passerait a cote du fait que le juge n'est
+                # pas capable de la produire.
+                console.print(
+                    f"  [red]{escape(metric):<40} aucune question notee "
+                    f"(juge incapable de produire ce jugement)[/]"
+                )
 
     asyncio.run(_run())
 

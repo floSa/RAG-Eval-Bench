@@ -92,7 +92,7 @@ with warnings.catch_warnings():
     )
 
 
-def _build_metrics(names: list[str] | None) -> list[Any]:
+def _build_metrics(names: list[str] | str | None) -> list[Any]:
     """Les quatre metriques canoniques.
 
     context_precision et context_recall sont les variantes AVEC reference :
@@ -107,6 +107,11 @@ def _build_metrics(names: list[str] | None) -> list[Any]:
     }
     if not names:
         return [cls() for cls in catalogue.values()]
+    # Une chaine est iterable caractere par caractere : sans ce cas, une
+    # option passee en `-o ragas_metrics=faithfulness` devient la liste
+    # ['f','a','i',...] et le message d'erreur est incomprehensible.
+    if isinstance(names, str):
+        names = [n.strip() for n in names.split(",") if n.strip()]
     unknown = set(names) - set(catalogue)
     if unknown:
         raise ValueError(
