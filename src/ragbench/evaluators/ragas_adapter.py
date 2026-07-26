@@ -25,55 +25,76 @@ pour les subir :
    verifie chacune. Compter plusieurs appels LLM par question et par
    metrique. D'ou l'option `max_samples`.
 
+DEUX PIEGES D'INTEGRATION, decouverts en branchant reellement l'outil :
+
+  - Ragas depend de langchain-community, et importe au chargement
+    `langchain_community.chat_models.vertexai`, supprime a partir de la
+    version 0.4 de langchain-community. Sans le pin `langchain-community<0.4`
+    de l'extra, `import ragas` echoue — sur du code Google Vertex dont on
+    n'a aucun usage ici.
+  - Les noms de colonnes de la sortie ne sont pas ceux des classes de
+    metriques : LLMContextPrecisionWithReference produit la colonne
+    `llm_context_precision_with_reference`. On lit donc `metric.name`
+    plutot que de coder les noms en dur, sinon une metrique disparait en
+    silence a la prochaine version.
+
+On passe par `llm_factory` avec un client OpenAI ordinaire, pas par
+LangchainLLMWrapper (deprecie en 0.4) : moins d'intermediaires, et la
+meme URL OpenAI-compatible que le reste du banc.
+
 Installation :  uv sync --extra ragas
 """
 
 from __future__ import annotations
 
 import math
+import warnings
 from typing import Any
 
-from .base import EvalContext, Score, register
-
-# Import au chargement du module : l'echec est capture par base.try_import,
-# qui desactive le plugin en le signalant au lieu de casser le banc.
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings  # noqa: E402
+from openai import OpenAI  # noqa: E402
 from ragas import EvaluationDataset, evaluate  # noqa: E402
 from ragas.dataset_schema import SingleTurnSample  # noqa: E402
-from ragas.embeddings import LangchainEmbeddingsWrapper  # noqa: E402
-from ragas.llms import LangchainLLMWrapper  # noqa: E402
-from ragas.metrics import (  # noqa: E402
-    Faithfulness,
-    LLMContextPrecisionWithReference,
-    LLMContextRecall,
-    ResponseRelevancy,
-)
+from ragas.embeddings import OpenAIEmbeddings as RagasOpenAIEmbeddings  # noqa: E402
+from ragas.llms import llm_factory  # noqa: E402
 
 from ..settings import settings as default_settings  # noqa: E402
+from .base import EvalContext, Score, register  # noqa: E402
+
+# Ragas 0.4 deplace ses metriques vers ragas.metrics.collections tout en
+# gardant l'ancien chemin fonctionnel. On reste sur le chemin classique,
+# verifie, et on tait l'avertissement plutot que de suivre une API qu'on
+# n'a pas testee.
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from ragas.metrics import (  # noqa: E402
+        Faithfulness,
+        LLMContextPrecisionWithReference,
+        LLMContextRecall,
+        ResponseRelevancy,
+    )
 
 
-def _build_metrics(names: list[str] | None) -> dict[str, Any]:
-    """Les quatre metriques canoniques, nommees comme dans la litterature.
+def _build_metrics(names: list[str] | None) -> list[Any]:
+    """Les quatre metriques canoniques.
 
     context_precision et context_recall sont les variantes AVEC reference :
     on dispose de la reponse gold, autant s'en servir plutot que de laisser
     le juge inventer sa propre cible.
     """
     catalogue = {
-        "faithfulness": Faithfulness(),
-        "answer_relevancy": ResponseRelevancy(),
-        "context_precision": LLMContextPrecisionWithReference(),
-        "context_recall": LLMContextRecall(),
+        "faithfulness": Faithfulness,
+        "answer_relevancy": ResponseRelevancy,
+        "context_precision": LLMContextPrecisionWithReference,
+        "context_recall": LLMContextRecall,
     }
     if not names:
-        return catalogue
+        return [cls() for cls in catalogue.values()]
     unknown = set(names) - set(catalogue)
     if unknown:
         raise ValueError(
-            f"metriques ragas inconnues : {sorted(unknown)} "
-            f"(disponibles : {sorted(catalogue)})"
+            f"metriques ragas inconnues : {sorted(unknown)} (disponibles : {sorted(catalogue)})"
         )
-    return {name: catalogue[name] for name in names}
+    return [catalogue[name]() for name in names]
 
 
 @register
@@ -85,27 +106,17 @@ class RagasEvaluator:
         cfg = ctx.config
         settings = default_settings
 
-        judge = LangchainLLMWrapper(
-            ChatOpenAI(
-                model=cfg.models.judge,
-                base_url=settings.llm_base_url,
-                api_key=settings.llm_api_key,
-                temperature=0.0,
-                timeout=settings.llm_timeout_s,
-            )
+        client = OpenAI(
+            base_url=settings.llm_base_url,
+            api_key=settings.llm_api_key,
+            timeout=settings.llm_timeout_s,
         )
-        embeddings = LangchainEmbeddingsWrapper(
-            OpenAIEmbeddings(
-                model=cfg.models.embedder,
-                base_url=settings.llm_base_url,
-                api_key=settings.llm_api_key,
-                check_embedding_ctx_length=False,  # Ollama n'expose pas le tokenizer
-            )
-        )
+        judge = llm_factory(cfg.models.judge, provider="openai", client=client)
+        embeddings = RagasOpenAIEmbeddings(client=client, model=cfg.models.embedder)
 
         metrics = _build_metrics(ctx.options.get("ragas_metrics"))
 
-        # Les predictions en erreur ou vides sont ecartees : les soumettre au
+        # Les predictions vides ou en erreur sont ecartees : les soumettre au
         # juge produirait un score de fidelite sur une chaine vide, c'est-a-dire
         # un chiffre sans referent.
         usable = [
@@ -134,48 +145,47 @@ class RagasEvaluator:
             for p in usable
         ]
 
-        result = evaluate(
-            dataset=EvaluationDataset(samples=samples),
-            metrics=list(metrics.values()),
-            llm=judge,
-            embeddings=embeddings,
-            raise_exceptions=False,  # un jugement non parsable donne NaN, pas un crash
-            show_progress=False,
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = evaluate(
+                dataset=EvaluationDataset(samples=samples),
+                metrics=metrics,
+                llm=judge,
+                embeddings=embeddings,
+                raise_exceptions=False,  # un jugement non parsable donne NaN, pas un crash
+                show_progress=False,
+            )
         frame = result.to_pandas()
 
         out: list[Score] = []
-        for metric_name in metrics:
-            if metric_name not in frame.columns:
-                # Ragas renomme parfois ses colonnes d'une version a l'autre :
-                # on le signale au lieu de perdre la metrique en silence.
+        for metric in metrics:
+            column = metric.name
+            if column not in frame.columns:
                 out.append(
                     Score(
-                        metric_name, None, None,
+                        column, None, None,
                         {"error": f"colonne absente de la sortie ragas : {list(frame.columns)}"},
                     )
                 )
                 continue
 
-            values = frame[metric_name].tolist()
             valid: list[float] = []
-
-            for prediction, value in zip(usable, values):
+            for prediction, value in zip(usable, frame[column].tolist()):
                 if value is None or (isinstance(value, float) and math.isnan(value)):
                     # Jugement non parsable : trace explicitement, pas ignore.
                     out.append(
                         Score(
-                            metric_name, None, prediction["question_id"],
+                            column, None, prediction["question_id"],
                             {"unparsed": True, "judge": cfg.models.judge},
                         )
                     )
                     continue
                 valid.append(float(value))
-                out.append(Score(metric_name, float(value), prediction["question_id"]))
+                out.append(Score(column, float(value), prediction["question_id"]))
 
             out.append(
                 Score(
-                    f"mean_{metric_name}",
+                    f"mean_{column}",
                     sum(valid) / len(valid) if valid else None,
                     None,
                     {

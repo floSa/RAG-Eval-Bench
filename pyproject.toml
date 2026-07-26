@@ -24,10 +24,11 @@ dependencies = [
 # fatal (cf. evaluators/registry.py).
 [project.optional-dependencies]
 ui = ["streamlit>=1.40", "altair>=5.4"]
-ragas = ["ragas>=0.2", "langchain-openai>=0.2", "datasets>=3.0"]
+# langchain-community<0.4 n'est PAS un caprice : ragas importe au chargement
+# `langchain_community.chat_models.vertexai`, retire a partir de la 0.4.
+# Sans ce pin, `import ragas` echoue sur du code Google Vertex inutilise ici.
+ragas = ["ragas>=0.4,<1.0", "langchain-community<0.4"]
 deepeval = ["deepeval>=2.0"]
-trulens = ["trulens-core>=1.0", "trulens-providers-openai>=1.0"]
-ragchecker = ["ragchecker>=0.1"]
 stats = ["scipy>=1.14", "scikit-learn>=1.5"]
 
 [project.scripts]
