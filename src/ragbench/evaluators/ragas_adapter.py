@@ -21,9 +21,27 @@ pour les subir :
    COUVERTURE (part des questions effectivement notees) et on la publie a
    cote de chaque metrique.
 
-3. Le cout est reel : faithfulness decompose la reponse en claims puis
-   verifie chacune. Compter plusieurs appels LLM par question et par
-   metrique. D'ou l'option `max_samples`.
+3. Le cout est reel, et bien plus eleve qu'attendu. Faithfulness decompose
+   la reponse en claims puis verifie chacune : plusieurs appels LLM par
+   question et par metrique. Mesure sur ollama-central, avec gemma4:e4b
+   comme juge : 12 a 30 SECONDES par appel de jugement, contre ~1 s pour
+   les evaluateurs natifs.
+
+   La cause est structurelle et vaut d'etre connue : Ragas — comme tout
+   framework externe — passe par l'endpoint OpenAI-compatible, qui n'expose
+   PAS le reglage du raisonnement d'Ollama. Le juge « reflechit » donc a
+   chaque jugement, et paie ~465 tokens de reflexion par appel. Les
+   evaluateurs natifs, eux, passent par /api/chat avec think=false.
+
+   C'est le prix a payer de l'architecture « tout derriere une API
+   OpenAI-compatible » quand le modele local est un modele a raisonnement.
+   Trois sorties possibles, par ordre de proprete :
+     - provisionner un juge SANS raisonnement cote llm-service (le mieux :
+       un juge different du generateur est de toute facon necessaire pour
+       eviter le biais d'auto-preference) ;
+     - interposer un proxy qui injecte think=false dans /v1 ;
+     - assumer le cout et limiter via `max_samples`.
+   D'ou l'option `max_samples`, indispensable en pratique.
 
 DEUX PIEGES D'INTEGRATION, decouverts en branchant reellement l'outil :
 
