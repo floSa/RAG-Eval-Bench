@@ -14,12 +14,23 @@ chunking:
   chunk_size: 1000
   chunk_overlap: 150
   document_prefix: "search_document: "
+  # Indispensable sur ce corpus : les questions contraignent la source et la
+  # date (« as reported by The Verge », « published on November 1, 2023 »).
+  # Sans ces champs dans le chunk, le generateur ne peut pas verifier la
+  # contrainte et s'abstient a tort.
+  header_fields: [title, source, published_at]
+  header_scope: chunk
 
 retrieval:
   mode: dense
   top_k: 5
   fetch_k: 20
   rerank: none
+  # 2 chunks maximum par article : MultiHop-RAG exige 2 a 4 documents
+  # DIFFERENTS par question. Sans plafond, un seul article accapare le
+  # top_k et le recall plafonne. La variante `no-doc-cap` de
+  # configs/experiments/retrieval.yml mesure ce que ce plafond apporte.
+  max_per_document: 2
   query_prefix: "search_query: "
   query_rewrite: false
 
@@ -28,6 +39,13 @@ generation:
   temperature: 0.0
   max_tokens: 512
   allow_abstain: true
+  # Raisonnement desactive dans la baseline. Mesure sur gemma4:e4b : avec le
+  # raisonnement actif, une reponse de 20 caracteres consomme ~465 tokens de
+  # generation, et un tiers des reponses ressortent VIDES parce que le budget
+  # part entierement dans la reflexion. La variante `thinking-on` de
+  # configs/experiments/generation.yml mesure ce que ce reglage coute en
+  # justesse — c'est au banc de le dire, pas a une intuition.
+  thinking: false
 
 models:
   generator: gemma4:e4b

@@ -12,13 +12,17 @@ base:
     strategy: recursive
     chunk_size: 1000
     chunk_overlap: 150
+    header_fields: [title, source, published_at]
+    header_scope: chunk
   retrieval:
     mode: dense
     top_k: 5
     fetch_k: 20
+    max_per_document: 2
   generation:
     prompt_template: default
     temperature: 0.0
+    thinking: false
   models:
     generator: gemma4:e4b
     embedder: nomic-embed-text:latest
@@ -48,6 +52,23 @@ variants:
     description: Deux fois plus de contexte. Teste si le rappel manque ou si le bruit nuit.
     retrieval:
       top_k: 10
+
+  # --- Ablations des deux corrections trouvees au pilote ----------------
+  - name: no-doc-cap
+    description: >
+      Sans plafond par document. Mesure combien de recall le plafond apporte
+      sur des questions qui exigent 2 a 4 articles differents.
+    retrieval:
+      max_per_document: null
+
+  - name: no-header
+    description: >
+      Chunks sans en-tete contextuel (ni titre, ni source, ni date). Seule
+      variante a reindexer le corpus, puisqu'elle change l'index_hash.
+      Mesure ce que coute de priver le generateur des metadonnees que les
+      questions exigent explicitement.
+    chunking:
+      header_fields: []
 
   - name: hybrid-k5
     description: Fusion RRF dense + lexical.

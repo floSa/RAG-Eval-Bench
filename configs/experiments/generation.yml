@@ -1,0 +1,60 @@
+# Matrice d'experience : comment le reglage de generation change la reponse ?
+#
+# Motivee par une observation du pilote : avec la consigne d'abstention, le
+# generateur repond INSUFFICIENT_CONTEXT sur 18 questions sur 20, alors
+# qu'une seule est reellement sans reponse. Deux causes possibles, que cette
+# matrice separe :
+#   - la consigne d'abstention est trop facile a satisfaire  -> abstain-off
+#   - le retrieval est reellement insuffisant                -> top_k=10
+# Et une troisieme variable, decouverte en cours de route :
+#   - le raisonnement du modele change-t-il quelque chose ?  -> thinking-on
+#
+# Toutes les variantes partagent le meme chunking, donc le meme index.
+
+base:
+  name: generation-sweep
+  chunking:
+    strategy: recursive
+    chunk_size: 1000
+    chunk_overlap: 150
+  retrieval:
+    mode: dense
+    top_k: 5
+  generation:
+    prompt_template: default
+    temperature: 0.0
+    max_tokens: 512
+    allow_abstain: true
+    thinking: false
+  models:
+    generator: gemma4:e4b
+    embedder: nomic-embed-text:latest
+    judge: gemma4:e4b
+
+variants:
+  - name: abstain-on
+    description: Reference. Consigne d'abstention active.
+
+  - name: abstain-off
+    description: >
+      Sans consigne d'abstention : le modele doit repondre. Isole l'effet de
+      la consigne. Attention a la lecture — supprimer l'abstention detruit
+      mecaniquement le negative_rejection sur les 301 questions sans reponse.
+      Un gain d'accuracy ici n'est pas gratuit.
+    generation:
+      allow_abstain: false
+
+  - name: topk10-abstain-on
+    description: >
+      Deux fois plus de contexte, consigne d'abstention conservee. Si les
+      abstentions chutent, c'est le retrieval qui manquait, pas la consigne.
+    retrieval:
+      top_k: 10
+
+  - name: thinking-on
+    description: >
+      Raisonnement du modele active. Environ 50x plus de tokens generes ;
+      exige max_tokens eleve, sinon la reponse ressort vide.
+    generation:
+      thinking: true
+      max_tokens: 2048

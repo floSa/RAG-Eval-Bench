@@ -23,11 +23,23 @@ PROMPT_VERSION = 1
 
 ABSTAIN_TOKEN = "INSUFFICIENT_CONTEXT"
 
+# Un modele s'abstient rarement avec le jeton qu'on lui a demande. Il
+# reformule — et surtout il le fait AUSSI quand la consigne d'abstention est
+# desactivee. Sans ces variantes, une abstention deguisee est comptee comme
+# une reponse fausse : on attribue au generateur une erreur de raisonnement
+# la ou il a en realite signale un manque de contexte. Les deux cas appellent
+# des corrections opposees, d'ou l'importance de les distinguer.
 _ABSTAIN_PATTERNS = [
     re.compile(rf"\b{ABSTAIN_TOKEN}\b", re.IGNORECASE),
     re.compile(r"\bi (don'?t|do not) (know|have enough)\b", re.IGNORECASE),
     re.compile(r"\bnot (enough|sufficient) (information|context)\b", re.IGNORECASE),
-    re.compile(r"\bcannot be (answered|determined) (from|based on)\b", re.IGNORECASE),
+    re.compile(r"\bcannot be (answered|determined)\b", re.IGNORECASE),
+    # Formulations observees sur gemma4:e4b lors du pilote.
+    re.compile(r"\b(context|text|document|article)s? (provided |given )?do(es)? not (contain|include|mention|provide)\b", re.IGNORECASE),
+    re.compile(r"\bprovided (context|text|documents?) does not\b", re.IGNORECASE),
+    re.compile(r"\bthere is no (information|mention|reference|article)\b", re.IGNORECASE),
+    re.compile(r"\bit is impossible to (determine|answer|tell)\b", re.IGNORECASE),
+    re.compile(r"\bno (information|details?) (is |are )?(available|provided|given)\b", re.IGNORECASE),
 ]
 
 _ABSTAIN_CLAUSE = (
@@ -88,6 +100,7 @@ class GenerationResult:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     error: str | None = None
+    thinking_chars: int = 0
 
 
 def format_context(contexts: list[Context], max_chars: int = 12000) -> str:
@@ -150,6 +163,7 @@ async def generate(
             temperature=cfg.generation.temperature,
             max_tokens=cfg.generation.max_tokens,
             seed=cfg.seed,
+            thinking=cfg.generation.thinking,
         )
     except Exception as exc:  # noqa: BLE001 - l'erreur est stockee, pas avalee
         return GenerationResult(
@@ -163,10 +177,24 @@ async def generate(
     if cfg.generation.prompt_template == "decompose" and "ANSWER:" in answer:
         answer = answer.split("ANSWER:", 1)[1].strip()
 
+    # Reponse vide alors que l'appel a reussi : le budget de generation a
+    # ete consomme par le raisonnement. Trace comme une erreur explicite —
+    # laisser passer une chaine vide la ferait compter comme une reponse
+    # fausse, et le diagnostic serait perdu.
+    error = None
+    if not answer.strip():
+        error = (
+            f"reponse vide : {comp.completion_tokens} tokens generes pour "
+            f"max_tokens={cfg.generation.max_tokens}"
+            + (f", dont {len(comp.thinking)} caracteres de raisonnement" if comp.thinking else "")
+        )
+
     return GenerationResult(
         answer=answer,
         abstained=detect_abstention(answer),
         elapsed_ms=comp.latency_ms,
         prompt_tokens=comp.prompt_tokens,
         completion_tokens=comp.completion_tokens,
+        error=error,
+        thinking_chars=len(comp.thinking),
     )

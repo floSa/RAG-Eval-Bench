@@ -32,6 +32,26 @@ class ChunkingConfig(_Frozen):
     strategy: Literal["fixed", "recursive", "sentence", "document"] = "recursive"
     chunk_size: int = 1000
     chunk_overlap: int = 150
+    # En-tete contextuel recopie sur CHAQUE chunk (« contextual chunking »).
+    #
+    # Ce n'est pas un detail de confort. Sur MultiHop-RAG, les questions
+    # referencent explicitement l'organe de presse et la date (« as reported
+    # by The Verge », « published on November 1, 2023 »). Sans ces champs
+    # dans le texte du chunk, le generateur ne peut PAS verifier la
+    # contrainte et repond « le contexte ne contient pas d'article de The
+    # Verge » — alors meme que le bon article a ete remonte au rang 2.
+    # Observe sur le pilote : c'est la cause principale des abstentions, pas
+    # la qualite du retrieval.
+    #
+    # Champs resolus depuis documents.title et documents.metadata. Liste vide
+    # = aucun en-tete (temoin utile : il mesure exactement ce que l'en-tete
+    # apporte).
+    header_fields: tuple[str, ...] = ("title", "source", "published_at")
+    # "chunk"    : en-tete sur chaque chunk (defaut, plus couteux en tokens)
+    # "document" : en-tete une seule fois avant decoupage — seul le premier
+    #              chunk en herite, ce qui etait le comportement initial et
+    #              se revele insuffisant.
+    header_scope: Literal["chunk", "document"] = "chunk"
     # Prefixe applique aux passages avant embedding. nomic-embed-text attend
     # "search_document: " cote corpus et "search_query: " cote question ;
     # l'oublier coute plusieurs points de recall.
@@ -49,6 +69,17 @@ class RetrievalConfig(_Frozen):
     # Constante du Reciprocal Rank Fusion pour le mode hybride.
     rrf_k: int = 60
     rerank: Literal["none", "llm"] = "none"
+    # Plafond de chunks conserves par document source.
+    #
+    # Sans plafond, un article tres proche de la question occupe tout le
+    # top_k avec ses propres passages. C'est fatal en multi-hop, ou la
+    # reponse exige 2 a 4 documents DIFFERENTS : le recall plafonne alors
+    # que la precision semble bonne. L'effet s'aggrave avec les en-tetes
+    # contextuels, qui rendent les chunks d'un meme document plus
+    # semblables entre eux.
+    # Necessite fetch_k > top_k pour avoir de quoi remplacer les chunks
+    # ecartes.
+    max_per_document: int | None = None
     similarity_threshold: float | None = None
     query_prefix: str = "search_query: "
     # Reecriture de la question avant recherche (le pipeline d'origine le
@@ -59,10 +90,29 @@ class RetrievalConfig(_Frozen):
 class GenerationConfig(_Frozen):
     prompt_template: str = "default"
     temperature: float = 0.0
-    max_tokens: int = 512
+    # 512 suffit sans raisonnement, pas avec. Mesure faite sur gemma4:e4b :
+    # une reponse de 20 caracteres consomme ~465 tokens de generation quand
+    # le raisonnement est actif — le budget part entierement dans la
+    # reflexion et la reponse visible ressort VIDE. C'est un piege
+    # silencieux : ni erreur, ni abstention, juste une chaine vide.
+    max_tokens: int = 1024
     # Consigne d'abstention. Sans elle, impossible de mesurer le negative
     # rejection (savoir dire "je ne sais pas").
     allow_abstain: bool = True
+    # Raisonnement explicite du modele (« thinking »).
+    #   None  = on laisse le modele decider
+    #   False = desactive
+    #   True  = force
+    # Variable experimentale a part entiere : sur gemma4:e4b, le desactiver
+    # divise les tokens generes par ~70 (499 -> 7 sur un prompt RAG type).
+    # Reste a savoir ce que ca coute en justesse — c'est precisement ce que
+    # le banc doit mesurer, pas ce qu'on doit supposer.
+    #
+    # Limite technique : Ollama n'honore ce reglage que sur son endpoint
+    # NATIF /api/chat. Son endpoint OpenAI-compatible ignore le champ
+    # silencieusement tout en facturant les tokens de reflexion. Cf.
+    # llm.LLMClient._complete_ollama_native.
+    thinking: bool | None = None
 
 
 class ModelConfig(_Frozen):

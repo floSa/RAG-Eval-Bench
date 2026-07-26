@@ -98,6 +98,20 @@ def _lexical(conn: psycopg.Connection, index_id: int, query: str, k: int) -> lis
     ]
 
 
+def _cap_per_document(candidates: list[Context], max_per_doc: int) -> list[Context]:
+    """Limite le nombre de chunks conserves par document, en gardant les
+    mieux classes. L'ordre relatif des survivants est preserve."""
+    counts: dict[str, int] = {}
+    kept: list[Context] = []
+    for ctx in candidates:
+        doc = ctx.document_external_id
+        if counts.get(doc, 0) >= max_per_doc:
+            continue
+        counts[doc] = counts.get(doc, 0) + 1
+        kept.append(ctx)
+    return kept
+
+
 def _rrf(runs: list[list[Context]], k_const: int, top_k: int) -> list[Context]:
     """Reciprocal Rank Fusion.
 
@@ -232,9 +246,12 @@ async def retrieve(
         debug["rewritten_query"] = search_text
 
     rr = cfg.retrieval
-    # Quand un reranker est actif, on remonte fetch_k candidats et on n'en
-    # garde top_k qu'apres reordonnancement.
-    pool_k = rr.fetch_k if rr.rerank != "none" else rr.top_k
+    # On remonte un vivier plus large que top_k des qu'une etape doit
+    # ecarter des candidats : reranking ou plafond par document. Sans
+    # vivier, ecarter un chunk reduirait simplement le nombre de passages
+    # au lieu de le remplacer.
+    needs_pool = rr.rerank != "none" or rr.max_per_document is not None
+    pool_k = rr.fetch_k if needs_pool else rr.top_k
 
     needs_embedding = rr.mode in ("dense", "hybrid")
     embedding: list[float] | None = None
@@ -259,6 +276,12 @@ async def retrieve(
 
     if rr.rerank == "llm" and candidates:
         candidates = await _llm_rerank(llm, cfg, question, candidates)
+
+    if rr.max_per_document is not None:
+        before = len(candidates)
+        candidates = _cap_per_document(candidates, rr.max_per_document)
+        debug["dropped_by_document_cap"] = before - len(candidates)
+        debug["distinct_documents"] = len({c.document_external_id for c in candidates[: rr.top_k]})
 
     contexts = candidates[: rr.top_k]
 

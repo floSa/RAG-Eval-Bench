@@ -17,6 +17,30 @@ from ..llm import LLMClient
 from .chunking import chunk_document
 
 
+def build_header(document: dict, fields: tuple[str, ...]) -> str:
+    """En-tete contextuel d'un document, sous forme « Cle: valeur » par ligne.
+
+    Format etiquete plutot que texte libre : le generateur doit pouvoir
+    repondre a « quel organe de presse a publie ceci ? » sans deviner, et
+    le lecteur humain doit pouvoir verifier la meme chose dans le
+    drill-down.
+    """
+    labels = {
+        "title": "Title",
+        "source": "Source",
+        "published_at": "Published",
+        "author": "Author",
+        "category": "Category",
+    }
+    metadata = document.get("metadata") or {}
+    lines: list[str] = []
+    for field_name in fields:
+        value = document.get(field_name) if field_name == "title" else metadata.get(field_name)
+        if value:
+            lines.append(f"{labels.get(field_name, field_name.title())}: {value}")
+    return "\n".join(lines)
+
+
 @dataclass
 class IndexReport:
     index_id: int
@@ -60,7 +84,8 @@ async def ensure_index(
         conn.commit()
 
     documents = conn.execute(
-        "SELECT id, external_id, title, body FROM documents WHERE dataset_id = %s ORDER BY id",
+        "SELECT id, external_id, title, body, metadata FROM documents "
+        "WHERE dataset_id = %s ORDER BY id",
         (dataset_id,),
     ).fetchall()
 
@@ -76,11 +101,17 @@ async def ensure_index(
         pending: list[dict] = []
 
         for doc in batch:
-            # Le titre est prefixe au corps avant decoupage : sur un corpus
-            # de presse, il porte souvent l'entite nommee qui rend le
-            # passage retrouvable.
-            body = f"{doc['title']}\n\n{doc['body']}" if doc["title"] else doc["body"]
-            for ordinal, text in enumerate(chunk_document(body, cfg.chunking)):
+            header = build_header(doc, cfg.chunking.header_fields)
+
+            if cfg.chunking.header_scope == "document":
+                body = f"{header}\n\n{doc['body']}" if header else doc["body"]
+                pieces = chunk_document(body, cfg.chunking)
+            else:
+                pieces = chunk_document(doc["body"], cfg.chunking)
+                if header:
+                    pieces = [f"{header}\n\n{piece}" for piece in pieces]
+
+            for ordinal, text in enumerate(pieces):
                 pending.append({"document_id": doc["id"], "ordinal": ordinal, "text": text})
 
         if not pending:

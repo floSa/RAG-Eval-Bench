@@ -21,6 +21,7 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 
+import httpx
 from openai import AsyncOpenAI
 from tenacity import (
     retry,
@@ -39,6 +40,20 @@ class Completion:
     latency_ms: int
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    # Raisonnement du modele, quand il est expose. Compte dans
+    # completion_tokens : un banc qui ignore ces tokens sous-estime son cout
+    # d'un ordre de grandeur sur les modeles a raisonnement.
+    thinking: str = ""
+
+    @property
+    def is_empty(self) -> bool:
+        """Reponse vide alors qu'un appel a bien eu lieu.
+
+        Symptome typique d'un budget max_tokens epuise par le raisonnement.
+        A compter separement des erreurs : l'appel a reussi, c'est le
+        resultat qui est inexploitable.
+        """
+        return not self.text.strip()
 
 
 @dataclass
@@ -82,6 +97,18 @@ class LLMClient:
         )
         self._sem = asyncio.Semaphore(self.cfg.llm_concurrency)
         self.usage = Usage()
+        # Echappatoire assumee vers l'API native d'Ollama, utilisee UNIQUEMENT
+        # quand une config demande explicitement d'activer ou de desactiver le
+        # raisonnement. L'endpoint OpenAI-compatible d'Ollama ignore le champ
+        # `think` sans le signaler, tout en facturant les tokens de reflexion :
+        # mesure faite sur gemma4:e4b, 499 tokens generes avec raisonnement
+        # contre 7 sans, pour la meme reponse.
+        # Tout le reste du banc continue de passer par /v1, donc vLLM et les
+        # frameworks d'evaluation fonctionnent sans changement — ils n'ont
+        # simplement pas acces a ce reglage.
+        base = self.cfg.llm_base_url.rstrip("/")
+        self._ollama_native = base[: -len("/v1")] if base.endswith("/v1") else None
+        self._http = httpx.AsyncClient(timeout=self.cfg.llm_timeout_s)
 
     # -- generation --------------------------------------------------------
 
@@ -95,11 +122,24 @@ class LLMClient:
         max_tokens: int = 512,
         system: str | None = None,
         seed: int | None = 42,
+        thinking: bool | None = None,
     ) -> Completion:
         messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
+
+        if thinking is not None and self._ollama_native:
+            out = await self._complete_ollama_native(
+                messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                seed=seed,
+                thinking=thinking,
+            )
+            self.usage.add(role, out)
+            return out
 
         @retry(
             stop=stop_after_attempt(self.cfg.llm_max_retries),
@@ -130,6 +170,54 @@ class LLMClient:
             out = await _call()
         self.usage.add(role, out)
         return out
+
+    async def _complete_ollama_native(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        seed: int | None,
+        thinking: bool,
+    ) -> Completion:
+        """Appel via /api/chat, seul endpoint qui honore `think`."""
+
+        @retry(
+            stop=stop_after_attempt(self.cfg.llm_max_retries),
+            wait=wait_exponential(multiplier=1, min=2, max=30),
+            reraise=True,
+        )
+        async def _call() -> Completion:
+            started = time.perf_counter()
+            resp = await self._http.post(
+                f"{self._ollama_native}/api/chat",
+                json={
+                    "model": model,
+                    "messages": messages,
+                    "stream": False,
+                    "think": thinking,
+                    "options": {
+                        "temperature": temperature,
+                        "num_predict": max_tokens,
+                        **({"seed": seed} if seed is not None else {}),
+                    },
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            message = data.get("message", {})
+            return Completion(
+                text=(message.get("content") or "").strip(),
+                model=model,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                prompt_tokens=data.get("prompt_eval_count", 0) or 0,
+                completion_tokens=data.get("eval_count", 0) or 0,
+                thinking=(message.get("thinking") or "").strip(),
+            )
+
+        async with self._sem:
+            return await _call()
 
     async def complete_many(
         self, prompts: list[str], **kwargs
@@ -185,6 +273,7 @@ class LLMClient:
 
     async def close(self) -> None:
         await self._client.close()
+        await self._http.aclose()
 
     async def __aenter__(self) -> LLMClient:
         return self
