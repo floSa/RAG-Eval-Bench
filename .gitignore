@@ -10,3 +10,6 @@ __pycache__/
 data/raw/
 data/cache/
 .env.bak
+
+# Cache et telemetrie crees par DeepEval a l execution.
+.deepeval/
