@@ -36,7 +36,7 @@ from deepeval.test_case import LLMTestCase  # noqa: E402
 from openai import AsyncOpenAI, OpenAI  # noqa: E402
 
 from ..settings import settings as default_settings  # noqa: E402
-from .base import EvalContext, Score, register  # noqa: E402
+from .base import EvalContext, Score, align_by_input, register  # noqa: E402
 
 _JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -175,14 +175,13 @@ class DeepEvalEvaluator:
         # parfaitement plausibles et un drill-down qui montre la reponse
         # d'une question a cote du verdict d'une autre. On reapparie sur le
         # texte de la question.
-        by_input = {p["question"]: p for p in usable}
-        n_unmatched = 0
+        aligned, n_unmatched = align_by_input(
+            usable,
+            list(getattr(results, "test_results", results)),
+            key=lambda case: getattr(case, "input", None),
+        )
 
-        for case_result in getattr(results, "test_results", results):
-            prediction = by_input.get(getattr(case_result, "input", None))
-            if prediction is None:
-                n_unmatched += 1
-                continue
+        for prediction, case_result in aligned:
             for metric_data in getattr(case_result, "metrics_data", []) or []:
                 key = (metric_data.name or "metric").lower().replace(" ", "_")
                 if metric_data.score is None:

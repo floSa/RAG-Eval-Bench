@@ -104,3 +104,44 @@ def test_evaluateur_inconnu_message_utile():
 
     with pytest.raises(KeyError, match="inconnu"):
         evaluators.get("nexiste.pas")
+
+
+class TestAlignByInput:
+    """Le zip positionnel est le piege le plus couteux du branchement de
+    frameworks : DeepEval renvoie ses resultats dans l'ordre de completion,
+    et une mauvaise attribution ne change AUCUNE moyenne agregee — ce sont
+    les memes valeurs, permutees. Le defaut ne se voit que dans le
+    drill-down, c'est-a-dire nulle part."""
+
+    def test_ordre_permute_recolle_correctement(self):
+        from ragbench.evaluators.base import align_by_input
+
+        predictions = [
+            {"question_id": 1, "question": "Qui a ete juge pour fraude ?"},
+            {"question_id": 2, "question": "Quelle societe a sorti du materiel ?"},
+        ]
+        # Ordre inverse, tel que DeepEval le renvoie en asynchrone.
+        results = [
+            {"input": "Quelle societe a sorti du materiel ?", "score": 0.0},
+            {"input": "Qui a ete juge pour fraude ?", "score": 1.0},
+        ]
+        aligned, orphans = align_by_input(predictions, results, key=lambda r: r["input"])
+        assert orphans == 0
+        assert {p["question_id"]: r["score"] for p, r in aligned} == {1: 1.0, 2: 0.0}
+
+    def test_resultat_orphelin_ecarte_et_compte(self):
+        from ragbench.evaluators.base import align_by_input
+
+        predictions = [{"question_id": 1, "question": "A"}]
+        results = [{"input": "A"}, {"input": "question inconnue"}]
+        aligned, orphans = align_by_input(predictions, results, key=lambda r: r["input"])
+        assert len(aligned) == 1
+        assert orphans == 1
+
+    def test_cle_absente_traitee_comme_orpheline(self):
+        from ragbench.evaluators.base import align_by_input
+
+        predictions = [{"question_id": 1, "question": "A"}]
+        aligned, orphans = align_by_input(predictions, [{}], key=lambda r: r.get("input"))
+        assert aligned == []
+        assert orphans == 1

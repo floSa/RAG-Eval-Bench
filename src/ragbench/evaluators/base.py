@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from ..config import PipelineConfig
 from ..llm import LLMClient
@@ -61,6 +61,40 @@ class EvalContext:
 
     def unanswerable(self) -> list[dict[str, Any]]:
         return [p for p in self.predictions if not p.get("gold_evidence")]
+
+
+def align_by_input(
+    predictions: list[dict[str, Any]],
+    results: list[Any],
+    *,
+    key: Callable[[Any], str | None],
+) -> tuple[list[tuple[dict[str, Any], Any]], int]:
+    """Rattache des resultats de framework a leurs predictions, PAR LE TEXTE.
+
+    A utiliser systematiquement plutot qu'un zip positionnel. Verifie sur
+    DeepEval : en mode asynchrone il renvoie les cas dans leur ordre de
+    COMPLETION, pas d'entree — le verdict du cas 1 revient attache au cas 0.
+    Un zip attribue alors chaque score a la mauvaise question.
+
+    C'est le pire type de defaut pour un banc d'evaluation. Il ne provoque
+    aucune erreur, les moyennes agregees restent EXACTEMENT les memes (ce
+    sont les memes valeurs, permutees), et seul le drill-down revele une
+    reponse affichee a cote du verdict d'une autre question. Autrement dit,
+    il ne se voit que si on regarde precisement la ou personne ne regarde.
+
+    Renvoie (paires appariees, nombre de resultats orphelins). Les
+    orphelins sont comptes et ecartes, jamais rattaches au petit bonheur.
+    """
+    by_question = {p["question"]: p for p in predictions}
+    aligned: list[tuple[dict[str, Any], Any]] = []
+    orphans = 0
+    for result in results:
+        prediction = by_question.get(key(result))
+        if prediction is None:
+            orphans += 1
+            continue
+        aligned.append((prediction, result))
+    return aligned, orphans
 
 
 class Evaluator(Protocol):

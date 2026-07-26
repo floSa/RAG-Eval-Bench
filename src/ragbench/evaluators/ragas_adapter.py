@@ -58,7 +58,7 @@ from ragas.embeddings import OpenAIEmbeddings as RagasOpenAIEmbeddings  # noqa: 
 from ragas.llms import llm_factory  # noqa: E402
 
 from ..settings import settings as default_settings  # noqa: E402
-from .base import EvalContext, Score, register  # noqa: E402
+from .base import EvalContext, Score, align_by_input, register  # noqa: E402
 
 # Ragas 0.4 deplace ses metriques vers ragas.metrics.collections tout en
 # gardant l'ancien chemin fonctionnel. On reste sur le chemin classique,
@@ -163,10 +163,9 @@ class RagasEvaluator:
         # invisible : les moyennes restent plausibles, seul le drill-down
         # montre une reponse a cote du verdict d'une autre question. Le cout
         # de la precaution est nul, celui de l'erreur est un run entier.
-        by_input = {p["question"]: p for p in usable}
-        rows = frame.to_dict("records")
-        aligned = [(by_input.get(row.get("user_input")), row) for row in rows]
-        n_unmatched = sum(1 for prediction, _ in aligned if prediction is None)
+        aligned, n_unmatched = align_by_input(
+            usable, frame.to_dict("records"), key=lambda row: row.get("user_input")
+        )
 
         out: list[Score] = []
         if n_unmatched:
@@ -190,8 +189,6 @@ class RagasEvaluator:
 
             valid: list[float] = []
             for prediction, row in aligned:
-                if prediction is None:
-                    continue
                 value = row.get(column)
                 if value is None or (isinstance(value, float) and math.isnan(value)):
                     # Jugement non parsable : trace explicitement, pas ignore.

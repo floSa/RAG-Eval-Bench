@@ -21,6 +21,7 @@ from .base import (  # noqa: F401
     EvalContext,
     Evaluator,
     Score,
+    align_by_input,
     available,
     check_requirements,
     get,
