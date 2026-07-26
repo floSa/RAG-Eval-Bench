@@ -377,6 +377,116 @@ def eval_run(
     asyncio.run(_run())
 
 
+# ---------------------------------------------------------------------
+# Comparaison
+# ---------------------------------------------------------------------
+
+
+@app.command("show")
+def show_run(run_id: int) -> None:
+    """Detail d'un run : metriques avec intervalles de confiance."""
+    summary = runner.summarize(run_id)
+    console.print(
+        f"[bold]run {summary.run_id}[/] — {summary.label} "
+        f"(config [cyan]{summary.config_name}[/] {summary.config_hash[:8]}, "
+        f"dataset {summary.dataset}, {summary.n_questions} questions, "
+        f"{summary.n_failed} echecs)"
+    )
+    for warning in summary.warnings:
+        console.print(f"[yellow]! {warning}[/]")
+
+    if summary.metrics:
+        table = Table("Metrique", "Moyenne", "IC 95 %", "n")
+        for name, ci in sorted(summary.metrics.items()):
+            table.add_row(
+                escape(name), f"{ci.mean:.4f}", f"[{ci.low:.4f}, {ci.high:.4f}]", str(ci.n)
+            )
+        console.print(table)
+
+    if summary.aggregates:
+        table = Table("Agregat de run", "Valeur")
+        for name, value in sorted(summary.aggregates.items()):
+            table.add_row(escape(name), f"{value:.4f}")
+        console.print(table)
+
+    if summary.usage:
+        console.print(f"[dim]tokens : {summary.usage}[/]")
+
+
+@app.command("compare")
+def compare_runs(
+    run_a: int,
+    run_b: int,
+    metric: str = typer.Option("", help="Une seule metrique, format evaluateur/metrique."),
+) -> None:
+    """Compare deux runs par test apparie sur les memes questions."""
+    if metric:
+        evaluator, _, name = metric.partition("/")
+        results = [runner.compare(run_a, run_b, evaluator=evaluator, metric=name)]
+    else:
+        results = runner.compare_all(run_a, run_b)
+
+    if not results:
+        console.print("[yellow]aucune metrique commune aux deux runs[/]")
+        return
+
+    table = Table("Metrique", "A", "B", "Ecart", "IC 95 % de l'ecart", "p", "n", "")
+    n_significant = 0
+    for res in results:
+        c = res.comparison
+        if c.significant:
+            n_significant += 1
+        table.add_row(
+            escape(f"{res.evaluator}/{res.metric}"),
+            f"{c.mean_a:.4f}",
+            f"{c.mean_b:.4f}",
+            f"{c.delta:+.4f}",
+            f"[{c.ci_low:+.4f}, {c.ci_high:+.4f}]",
+            f"{c.p_value:.3f}",
+            str(c.n_pairs),
+            "[green]oui[/]" if c.significant else "[dim]non[/]",
+        )
+    console.print(table)
+    console.print(
+        f"[dim]{n_significant}/{len(results)} ecarts dont l'IC exclut zero. "
+        f"Avec {len(results)} comparaisons a 5 %, environ "
+        f"{len(results) * 0.05:.1f} faux positif(s) sont attendus par hasard.[/]"
+    )
+
+    dropped = max((r.n_dropped_a + r.n_dropped_b) for r in results)
+    if dropped:
+        console.print(
+            f"[yellow]{dropped} question(s) ecartee(s) au maximum : "
+            f"notees dans un run et pas dans l'autre[/]"
+        )
+
+
+@app.command("leaderboard")
+def leaderboard_cmd(
+    dataset: str = typer.Option("multihop-rag"),
+    metric: str = typer.Option("native.answer/contains", help="evaluateur/metrique"),
+    limit: int = 20,
+) -> None:
+    """Classement des runs d'un dataset sur une metrique."""
+    evaluator, _, name = metric.partition("/")
+    rows = runner.leaderboard(dataset, evaluator=evaluator, metric=name, limit=limit)
+    if not rows:
+        console.print(f"[yellow]aucun run note sur {escape(metric)}[/]")
+        return
+
+    table = Table("#", "run", "config", "Moyenne", "IC 95 %", "n")
+    for rank, row in enumerate(rows, start=1):
+        table.add_row(
+            str(rank), str(row["run_id"]), row["config"],
+            f"{row['mean']:.4f}", f"[{row['low']:.4f}, {row['high']:.4f}]", str(row["n"]),
+        )
+    console.print(table)
+    console.print(
+        "[dim]Classement, pas test statistique : deux lignes dont les IC se "
+        "chevauchent ne sont pas departagees. Utiliser `ragbench compare`.[/]"
+    )
+
+
 @app.command()
 def embed(text: str, model: str = "nomic-embed-text:latest") -> None:
     """Calcule un embedding — sert a verifier la dimension d'un modele."""

@@ -79,18 +79,43 @@ def _dense(
 
 
 def _lexical(conn: psycopg.Connection, index_id: int, query: str, k: int) -> list[Context]:
+    # La requete est convertie en OU de ses lexemes, pas en ET.
+    #
+    # plainto_tsquery() assemble les termes avec AND : sur les questions de
+    # MultiHop-RAG, longues de 30 a 60 mots, AUCUN passage ne contient tous
+    # les termes et la recherche renvoie systematiquement zero resultat.
+    # Le symptome est silencieux — pas d'erreur, juste un retrieval vide et
+    # une abstention sur chaque question.
+    #
+    # tsvector_to_array(to_tsvector(...)) donne les lexemes normalises
+    # (racinises, mots-outils retires) qu'on rejoint par ' | '. ts_rank_cd
+    # classe ensuite par densite de couverture, donc les passages qui
+    # contiennent le plus de termes de la question ressortent en tete.
     rows = conn.execute(
         """
+        WITH lexemes AS (
+            SELECT unnest(tsvector_to_array(to_tsvector('english', %s))) AS lexeme
+        ), q AS (
+            -- quote_literal sur chaque lexeme : certains contiennent une
+            -- apostrophe ou un tiret et feraient echouer to_tsquery bruts.
+            -- NULLIF renvoie une tsquery vide plutot qu'une erreur quand la
+            -- question ne contient que des mots-outils.
+            SELECT to_tsquery(
+                'english',
+                NULLIF(string_agg(quote_literal(lexeme), ' | '), '')
+            ) AS tsq
+            FROM lexemes
+        )
         SELECT c.id, c.document_id, d.external_id, c.text,
-               ts_rank_cd(c.tsv, plainto_tsquery('english', %s)) AS score
+               ts_rank_cd(c.tsv, q.tsq) AS score
         FROM chunks c
         JOIN documents d ON d.id = c.document_id
-        WHERE c.index_id = %s
-          AND c.tsv @@ plainto_tsquery('english', %s)
+        CROSS JOIN q
+        WHERE c.index_id = %s AND c.tsv @@ q.tsq
         ORDER BY score DESC
         LIMIT %s
         """,
-        (query, index_id, query, k),
+        (query, index_id, k),
     ).fetchall()
     return [
         Context(r["id"], r["document_id"], r["external_id"], r["text"], float(r["score"]), i + 1, "lexical")
