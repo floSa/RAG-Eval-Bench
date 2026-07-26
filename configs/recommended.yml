@@ -1,0 +1,72 @@
+# Configuration RECOMMANDEE : les meilleurs reglages mesures par le banc.
+#
+# C'est celle a utiliser pour repondre a une question. `baseline.yml` reste
+# volontairement banale et INCHANGEE : elle est le point de comparaison des
+# 23 runs deja en base, et la modifier casserait la comparabilite de tout
+# l'historique.
+#
+# Trois ecarts par rapport a la baseline, chacun mesure sur 200 questions :
+#
+#   mode: hybrid          recall@3 +0.098 vs dense   (p < 0.001)
+#   prompt: decompose     justesse +0.096            (p = 0.001)
+#   fetch_k: 30           consequence du plafond par document : avec un
+#                         vivier de 20 et 2 chunks max par article, on
+#                         plafonne a 10 articles distincts. Non mesure
+#                         separement.
+#
+# Reglages volontairement ECARTES malgre l'intuition :
+#   rerank: llm           n'apporte rien (-0.001, p = 0.959) pour 5x le cout
+#   allow_abstain: false  +0.073 de justesse mais -0.217 de capacite a dire
+#                         « je ne sais pas ». decompose fait aussi bien sans
+#                         payer ce prix.
+
+name: recommended
+description: >
+  Recherche hybride RRF, prompt par decomposition, en-tete contextuel et
+  plafond de 2 chunks par article. Meilleure configuration mesuree sur
+  MultiHop-RAG au 26/07/2026.
+
+chunking:
+  strategy: recursive
+  chunk_size: 1000
+  chunk_overlap: 150
+  document_prefix: "search_document: "
+  # Vaut +0.102 de justesse (p < 0.001) : sans la source et la date dans le
+  # chunk, le generateur ne peut pas verifier « as reported by The Verge »
+  # et s'abstient alors meme que le bon article a ete remonte.
+  header_fields: [title, source, published_at]
+  header_scope: chunk
+
+retrieval:
+  # Fusion RRF du dense et du lexical. Sur ce corpus le lexical seul bat
+  # deja le dense (+0.062, p = 0.010) : les questions citent des organes de
+  # presse et des dates, c'est de l'appariement exact.
+  mode: hybrid
+  top_k: 5
+  fetch_k: 30
+  rerank: none
+  max_per_document: 2
+  query_prefix: "search_query: "
+  query_rewrite: false
+
+generation:
+  # Le modele liste d'abord les faits intermediaires, puis conclut. Cible
+  # les questions multi-hop, ou l'echec vient souvent d'un raccourci de
+  # raisonnement plutot que d'un manque de contexte.
+  prompt_template: decompose
+  temperature: 0.0
+  # 1024 et non 512 : le prompt decompose produit une liste de faits AVANT
+  # la reponse, il lui faut de la place.
+  max_tokens: 1024
+  allow_abstain: true
+  thinking: false
+
+models:
+  generator: gemma4:e4b
+  embedder: nomic-embed-text:latest
+  # Juge d'une autre famille que le generateur : un modele qui note ses
+  # propres sorties se surnote. llama3.2:3b est un choix par DEFAUT, pas un
+  # choix optimal — il echoue sur les metriques a schema JSON profond.
+  judge: llama3.2:3b
+
+seed: 42
