@@ -178,6 +178,56 @@ plutôt qu'omises — une métrique absente se lirait comme une métrique non de
 appel : 12 à 30 secondes par jugement, soit plus de 2 minutes par question sur les
 quatre métriques. Une campagne Ragas de 20 questions a été interrompue après 40 minutes.
 
+### Un modèle plus récent ne fait pas un meilleur juge
+
+Hypothèse intuitive, et fausse. Quatre juges ont été mesurés sur les **mêmes** 60
+réponses du run 24, dont trois nettement plus récents que `llama3.2:3b` :
+
+| Juge | Publié | κ `claim_precision` | κ `claim_recall` | Trop généreux | Trop sévère | n |
+|---|---|---|---|---|---|---|
+| `llama3.2:3b` | ~1 an | +0.048 | **+0.458** | 0.200 | 0.229 | 48–50 |
+| `granite4.1:3b` | 2 mois | +0.191 | indéfini | 0.250 | **0.000** | 24 |
+| `nemotron-3-nano:4b` | 4 mois | **+0.000** | indéfini | 0.318 | **0.000** | 22 |
+| `qwen3.5:4b` | 4 mois | — | — | — | — | **0** |
+
+Trois lectures, dans l'ordre de gravité :
+
+1. **`nemotron-3-nano:4b` obtient κ = +0.000** — l'accord du hasard. Sa colonne « trop
+   sévère » vaut 0.000 : il ne conteste **jamais**, il valide. Son `claim_recall` est
+   constant à 1.0, d'où un κ indéfini — une sortie qui ne varie pas ne peut pas
+   s'accorder avec quoi que ce soit. NVIDIA le donne état de l'art en suivi
+   d'instructions (IFEval, IFBench) dans sa catégorie ; **cette compétence ne se
+   transfère pas au jugement critique**.
+2. **`qwen3.5:4b` n'a produit aucun jugement exploitable** sur les 60 questions.
+3. **`llama3.2:3b`, le plus ancien, reste le meilleur** : seul κ au-dessus de 0,4, et
+   seul juge dont les erreurs vont dans les **deux** sens (0.200 généreux / 0.229
+   sévère). Il produit aussi deux fois plus de jugements exploitables (48 contre 22).
+
+Ce résultat rejoint la littérature : les petits modèles ouverts manifestent un
+**biais de complaisance** — ils attribuent des scores élevés sans fonder leur jugement
+sur les preuves, avec des taux de sycophantie mesurés entre 6 et 22 %
+([Pacific AI](https://pacific.ai/detecting-and-evaluating-sycophancy-bias-an-analysis-of-llm-and-ai-solutions/),
+[arXiv 2510.12462](https://arxiv.org/pdf/2510.12462)). La même revue note que
+**peu de travaux évaluent les modèles ouverts de 3 à 4 milliards de paramètres comme
+juges** — cette mesure comble donc un angle mort documenté, elle ne le contredit pas.
+
+Aucun framework ne prescrit de juge. Ragas et DeepEval acceptent tous deux un modèle
+local sans en recommander aucun : DeepEval renvoie explicitement au choix de
+l'utilisateur ([DeepEval, LLM-as-a-judge](https://deepeval.com/blog/llm-as-a-judge)).
+La méthode publiée est précisément celle du banc — échantillonner, annoter, calculer le
+κ juge↔référence — avec pour repère **κ > 0,6 acceptable, > 0,8 solide**
+([Label Your Data](https://labelyourdata.com/articles/llm-as-a-judge)). Sur ce corpus,
+aucun des quatre juges n'atteint 0,6 : c'est la conclusion honnête à retenir.
+
+*Limite* : n = 22 à 50, ces κ sont bruités. L'échec de `qwen3.5:4b` et le κ nul de
+`nemotron-3-nano:4b` sont nets ; l'écart entre `granite4.1:3b` et `llama3.2:3b` ne
+l'est pas. Reproductible :
+
+```bash
+ragbench eval run 24 -e native.claims -o judge=<modele> -o max_samples=60
+ragbench calibrate 24
+```
+
 ### Calibration contre la vérité terrain
 
 Puisque MultiHop-RAG fournit les réponses gold, `native.answer/contains` n'est pas une

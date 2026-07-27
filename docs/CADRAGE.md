@@ -225,3 +225,6 @@ découpage qui perd du texte ne lève aucune erreur. C'est là que les tests pai
 | [Ragas](https://docs.ragas.io/) | Les quatre métriques canoniques |
 | [DeepEval](https://deepeval.com/) | Seuils pass/fail, donc non-régression en intégration continue |
 | CALM (biais des juges LLM) | Justifie la contrainte juge ≠ générateur |
+| [Biais de sycophantie des juges](https://pacific.ai/detecting-and-evaluating-sycophancy-bias-an-analysis-of-llm-and-ai-solutions/) · [arXiv 2510.12462](https://arxiv.org/pdf/2510.12462) | Les petits modèles ouverts notent haut sans fonder leur jugement (6–22 %) — explique le κ nul de `nemotron-3-nano:4b` |
+| [Label Your Data — LLM as a Judge](https://labelyourdata.com/articles/llm-as-a-judge) | Protocole de validation d'un juge : κ juge↔référence, repère κ > 0,6 |
+| [DeepEval — LLM-as-a-judge](https://deepeval.com/blog/llm-as-a-judge) | Confirme qu'aucun framework ne prescrit de modèle juge : le choix revient à la mesure |
