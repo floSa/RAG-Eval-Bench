@@ -227,7 +227,7 @@ automatique.
 |---|---|---|
 | Recherche vectorielle | Parcours exact, sans index ANN | Tient jusqu'à ~10⁵ chunks. Au-delà, ajouter un index HNSW par dimension et mesurer la perte de recall induite |
 | Boucle d'événements | Les appels Postgres sont synchrones dans des workers async ; ils bloquent brièvement la boucle | Sans effet à cette échelle (~30-80 ms). Passer à `psycopg.AsyncConnection` si le corpus grossit |
-| Juges LLM | Non reproductibles, même à température 0 avec graine — voir [METHODOLOGIE.md](METHODOLOGIE.md#5-la-fiabilité-des-juges) | Les métriques déterministes restent la référence. Répéter les passes de jugement pour estimer la variance |
+| Juges LLM | Non reproductibles, même à température 0 avec graine — voir [JUGES.md](JUGES.md) | Les métriques déterministes restent la référence. Répéter les passes de jugement pour estimer la variance |
 | `native.erag` | Utilité nulle à tous les rangs sur un corpus multi-hop : la méthode suppose qu'un document seul suffise | Réserver eRAG au QA à un seul saut. `native.nuggets` répond à la même question sans cette hypothèse |
 | Couverture des juges | `llama3.2:3b` ne produit aucun score pour `contextual_precision` et `contextual_recall` (schémas JSON trop profonds) | Publié avec une couverture de 0. Provisionner un juge plus capable, ou un vérificateur NLI dédié |
 | Validation humaine | Aucune annotation manuelle à ce jour (`annotations` ne contient que des valeurs `ground_truth`) | Nécessaire pour valider les juges de **fidélité**, que la vérité terrain de justesse ne couvre pas |

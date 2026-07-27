@@ -96,7 +96,7 @@ listes vides qui seraient interprétées comme « sans réponse ».
 **C'est ici que tout se joue.** MultiHop-RAG fournit les réponses gold ; vos documents
 techniques, non. Sans elles, la référence déterministe disparaît et il ne reste que des
 juges LLM — dont ce banc a mesuré qu'aucun modèle local de 3–4 milliards de paramètres
-n'est fiable (voir [METHODOLOGIE.md](METHODOLOGIE.md#un-modèle-plus-récent-ne-fait-pas-un-meilleur-juge)).
+n'est fiable (voir [JUGES.md](JUGES.md#2-un-modèle-plus-récent-ne-fait-pas-un-meilleur-juge)).
 
 Brancher ses données sans vérité terrain produit des chiffres, pas des mesures.
 
@@ -218,7 +218,7 @@ Le banc est **100 % on-premise** : Postgres en local, inférence via le service 
 central, aucun appel sortant. Vos documents ne quittent pas votre machine.
 
 Une seule exception, et elle est signalée comme telle dans
-[METHODOLOGIE.md](METHODOLOGIE.md#le-plafond--ce-que-donnerait-un-très-grand-juge) : la
+[JUGES.md](JUGES.md#3-le-plafond--ce-que-donnerait-un-très-grand-juge) : la
 mesure d'étalonnage par un très grand modèle externe. Elle a été faite **une fois, sur un
 corpus public**, pour chiffrer le plafond atteignable. Ne la rejouez pas sur des données
 sensibles.

@@ -68,7 +68,7 @@ des résultats.
   forme abrégée — `Bankman-Fried` pour un gold `Sam Bankman-Fried`. Les valeurs de
   `contains` sont donc des **bornes basses** : 0.340 mesuré contre 0.358 réel sur cet
   échantillon. Les comparaisons appariées restent valides, le biais s'annulant dans
-  l'écart. Détail dans [METHODOLOGIE.md](METHODOLOGIE.md#la-référence-elle-même-a-un-plafond).
+  l'écart. Détail dans [JUGES.md](JUGES.md#4-la-référence-elle-même-a-un-plafond).
 
 - **Un échantillon de 200 questions suffit pour départager deux configurations.**
   Vérifié empiriquement : les intervalles de confiance obtenus (± 0,05 sur `recall@3`)
@@ -137,7 +137,7 @@ Tableau complet dans le [README](../README.md#licences--composants).
 - **Métriques déterministes d'abord, juges LLM ensuite.** **Parce que** les
   déterministes sont gratuites, reproductibles et non biaisées, et qu'elles servent de
   référence pour calibrer les juges. Mesuré : les juges LLM ne sont **pas**
-  reproductibles (voir [METHODOLOGIE.md](METHODOLOGIE.md#5-la-fiabilité-des-juges)).
+  reproductibles (voir [JUGES.md](JUGES.md)).
 
 - **Aucun index ANN sur les embeddings** (ni ivfflat ni hnsw), parcours exact,
   **parce qu'**un index approximatif introduit une perte de recall qui se confondrait
