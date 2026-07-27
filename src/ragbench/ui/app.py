@@ -18,8 +18,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from .. import stats
-from . import data
+from ragbench import stats
+from ragbench.ui import data
 
 st.set_page_config(page_title="Banc d'evaluation RAG", page_icon="📐", layout="wide")
 
