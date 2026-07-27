@@ -141,16 +141,38 @@ Tableau complet dans le [README](../README.md#licences--composants).
   campagne consomme des milliers d'appels et qu'un second Ollama à côté du central
   saturerait les 16 Go de VRAM, faussant toute mesure de latence.
 
+- **Le juge par défaut reste `llama3.2:3b`** malgré son âge, **parce que** c'est le seul
+  des quatre candidats testés dont les erreurs de jugement vont dans les deux sens. Trois
+  modèles nettement plus récents ont été mesurés sur les mêmes 60 réponses du run 24 :
+
+  | Juge | Publié | κ `claim_precision` | κ `claim_recall` | Trop généreux | Trop sévère | n |
+  |---|---|---|---|---|---|---|
+  | `llama3.2:3b` | ~1 an | +0.048 | **+0.458** | 0.200 | 0.229 | 48–50 |
+  | `granite4.1:3b` | 2 mois | +0.191 | indéfini | 0.250 | **0.000** | 24 |
+  | `nemotron-3-nano:4b` | 4 mois | **+0.000** | indéfini | 0.318 | **0.000** | 22 |
+  | `qwen3.5:4b` | 4 mois | — | — | — | — | **0** |
+
+  Lecture : une colonne « trop sévère » à 0.000 avec un `claim_recall` constant à 1.0
+  signe un juge qui valide sans contester — κ indéfini parce que sa sortie ne varie pas.
+  `nemotron-3-nano:4b` est donné état de l'art en suivi d'instructions (IFEval, IFBench)
+  par NVIDIA ; cette compétence ne se transfère pas au jugement critique. `qwen3.5:4b`
+  n'a produit aucun jugement exploitable. `llama3.2:3b` produit en outre deux fois plus
+  de jugements exploitables (48 contre 22).
+
+  *Limite* : n = 22 à 50, ces κ sont bruités. L'échec de `qwen3.5:4b` et le κ nul de
+  `nemotron-3-nano:4b` sont nets ; l'écart entre `granite4.1:3b` et `llama3.2:3b` ne
+  l'est pas. Reproductible via `ragbench eval run 24 -e native.claims -o judge=<modele>`
+  puis `ragbench calibrate 24`.
+
+  **Ce que ça invalide** : l'hypothèse — intuitive et fausse — qu'un modèle plus récent
+  fait un meilleur juge. La date de publication n'a aucun pouvoir prédictif ici.
+
 ### À trancher
 
 - **Faut-il un profil vLLM ?** Le continuous batching donnerait un net gain de débit sur
   une charge d'évaluation. Reco par défaut : attendre qu'une campagne dépasse l'heure
   avant d'ajouter cette complexité. Contrainte connue : vLLM épingle un seul modèle en
   VRAM, sans swap, et exigerait des poids quantifiés sur 16 Go.
-
-- **Quel juge par défaut ?** `llama3.2:3b` est rapide (~1 s par jugement) mais échoue sur
-  les métriques à schéma JSON profond ; `gemma4:e4b` juge mieux mais met 12 à 30 s par
-  appel parce qu'il raisonne. Reco par défaut : `llama3.2:3b`, en publiant la couverture.
 
 - **Faut-il un vérificateur NLI dédié** (HHEM-2.1-open, MiniCheck) pour la fidélité,
   plutôt qu'un juge génératif ? Reco par défaut : oui, à évaluer — HHEM tourne même en
