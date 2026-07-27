@@ -142,8 +142,9 @@ Tableau complet dans le [README](../README.md#licences--composants).
   saturerait les 16 Go de VRAM, faussant toute mesure de latence.
 
 - **Le juge par défaut reste `llama3.2:3b`** malgré son âge, **parce que** c'est le seul
-  des quatre candidats testés dont les erreurs de jugement vont dans les deux sens. Trois
-  modèles nettement plus récents ont été mesurés sur les mêmes 60 réponses du run 24 :
+  des quatre candidats testés dont l'accord avec la vérité terrain dépasse le hasard.
+  Trois modèles nettement plus récents ont été mesurés sur les mêmes 60 réponses du
+  run 24 :
 
   | Juge | Publié | κ `claim_precision` | κ `claim_recall` | Trop généreux | Trop sévère | n |
   |---|---|---|---|---|---|---|
@@ -166,6 +167,12 @@ Tableau complet dans le [README](../README.md#licences--composants).
 
   **Ce que ça invalide** : l'hypothèse — intuitive et fausse — qu'un modèle plus récent
   fait un meilleur juge. La date de publication n'a aucun pouvoir prédictif ici.
+
+  **Ce que ça ne dit pas** : qu'un juge sévère aurait raison. Contester systématiquement
+  est aussi dégénéré que valider systématiquement, et le κ le sanctionne pareil — un
+  juge aléatoire obtient κ ≈ 0 quel que soit son penchant. Le +0.458 de `llama3.2:3b`
+  affirme seulement que son accord avec la vérité terrain dépasse le hasard : « mieux
+  que rien », pas « fiable ». Il reste sous le repère de 0,6.
 
 ### À trancher
 

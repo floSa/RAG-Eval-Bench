@@ -199,9 +199,20 @@ Trois lectures, dans l'ordre de gravité :
    d'instructions (IFEval, IFBench) dans sa catégorie ; **cette compétence ne se
    transfère pas au jugement critique**.
 2. **`qwen3.5:4b` n'a produit aucun jugement exploitable** sur les 60 questions.
-3. **`llama3.2:3b`, le plus ancien, reste le meilleur** : seul κ au-dessus de 0,4, et
-   seul juge dont les erreurs vont dans les **deux** sens (0.200 généreux / 0.229
-   sévère). Il produit aussi deux fois plus de jugements exploitables (48 contre 22).
+3. **`llama3.2:3b`, le plus ancien, reste le meilleur** : seul κ au-dessus de 0,4. Il
+   produit aussi deux fois plus de jugements exploitables (48 contre 22).
+
+**Attention à ne pas inverser le raisonnement.** Un juge qui conteste tout n'a pas plus
+raison qu'un juge qui valide tout : les deux sont dégénérés, symétriquement. Que les
+erreurs de `llama3.2:3b` aillent dans les deux sens (0.200 généreux / 0.229 sévère) est
+un **symptôme** de non-dégénérescence, pas une preuve de justesse — un juge qui
+contesterait au hasard serait tout aussi bidirectionnel.
+
+Ce qui tranche, c'est le **κ, et lui seul**, parce qu'il est corrigé du hasard : un juge
+aléatoire obtient κ ≈ 0 qu'il soit complaisant, sévère ou équilibré. Le +0.458 signifie
+que l'accord avec la vérité terrain dépasse ce que le hasard expliquerait. C'est une
+affirmation faible — « mieux que rien », pas « fiable » — et elle reste sous le repère
+de 0,6 publié pour un juge utilisable.
 
 Ce résultat rejoint la littérature : les petits modèles ouverts manifestent un
 **biais de complaisance** — ils attribuent des scores élevés sans fonder leur jugement
