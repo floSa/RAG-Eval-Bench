@@ -321,6 +321,36 @@ Repères d'interprétation du κ : < 0,4 faible · 0,4–0,6 moyen · 0,6–0,8 
 > 0,8 excellent. L'accord brut seul est trompeur : sur un jeu où 80 % des réponses sont
 fausses, un juge qui répond toujours « fausse » atteint 80 % d'accord et un κ de 0.
 
+### Annotation manuelle de la fidélité
+
+La calibration automatique porte sur la justesse. La fidélité, elle, demandait une
+annotation à la main — c'est la seule chose que la vérité terrain ne pouvait pas fournir.
+**13 réponses non abstenues du run 24** ont été jugées avec les passages remontés
+**intégraux** sous les yeux, critère : chaque affirmation est-elle soutenue par les
+passages ?
+
+**Fidélité = 11/13, soit 0.846.** Les deux échecs et surtout les trois réponses *fausses
+mais fidèles* sont plus instructifs que la moyenne :
+
+| Cas | Réponse | Diagnostic |
+|---|---|---|
+| qid 465 | « Google » là où les critères désignent Apple | **Non fidèle.** Le modèle a retenu l'entité la plus fréquente du contexte, pas celle qui satisfait les critères. Pas une hallucination — une attribution non fondée. |
+| qid 655 | « Yes » | **Non fidèle.** Les passages disent explicitement le contraire des deux clauses. |
+| qid 600, 720, 864 | réponses **fausses** | **Fidèles.** Le passage nécessaire n'avait pas été remonté ; répondre « No » était fondé sur ce qui avait été fourni. |
+
+**C'est la preuve empirique, sur ce corpus, que fidélité ≠ justesse.** Trois réponses sur
+treize sont fausses sans que le générateur soit en cause : il a raisonné correctement sur
+un contexte incomplet. Publier la seule fidélité aurait donné 0.846 et masqué un taux de
+justesse de 0.339.
+
+**Ce que ça dit du diagnostic** : le générateur n'hallucine quasiment pas sur ce corpus,
+il est affamé. Cohérent avec `nugget_full_coverage = 0.0395`. Avant de changer de modèle,
+il faut remonter plus de documents pertinents.
+
+*Limites* : n = 13, un seul annotateur. Suffisant pour établir que les deux notions
+divergent, insuffisant pour chiffrer un taux de fidélité. Rejouable :
+`uv run python scripts/annotation_fidelite.py`.
+
 ### Ce que la calibration ne remplace pas
 
 La référence porte sur la **justesse**. Elle valide correctement les métriques qui
