@@ -239,6 +239,59 @@ ragbench eval run 24 -e native.claims -o judge=<modele> -o max_samples=60
 ragbench calibrate 24
 ```
 
+### Le plafond : ce que donnerait un très grand juge
+
+Les quatre juges locaux plafonnent sous le seuil d'utilisabilité. Restait à savoir si
+c'est une limite de la **taille des modèles** ou une limite de la **tâche** — certaines
+questions de ce corpus sont peut-être indécidables. Un juge hors catégorie tranche la
+question : les 53 mêmes réponses du run 24 ont été jugées à la main par **Claude Opus 5**,
+en aveugle (référence non consultée avant verdict), sur le critère de `contains`.
+
+| Juge | κ vs vérité terrain | Trop généreux | Trop sévère | n |
+|---|---|---|---|---|
+| **Claude Opus 5** (externe) | **+0.958** | 0.019 | 0.000 | 53 |
+| `llama3.2:3b` | +0.458 | 0.200 | 0.229 | 48 |
+| `granite4.1:3b` | +0.191 | 0.250 | 0.000 | 24 |
+| `nemotron-3-nano:4b` | +0.000 | 0.318 | 0.000 | 22 |
+| `qwen3.5:4b` | échec | — | — | 0 |
+
+**La tâche est donc jugeable ; ce sont les petits modèles qui ne la jugent pas.** L'écart
+0.958 contre 0.458 mesure exactement le prix de la contrainte on-premise sur ce poste.
+
+*Ce que ça ne dit pas* : que le banc devrait appeler un juge externe. Claude Opus 5
+**viole la contrainte on-premise** — un jugement par appel sortant, sur un corpus qui
+pourrait être confidentiel dans un autre déploiement. C'est un **étalon de calibration**,
+mesuré une fois sur un corpus public, pas une brique du pipeline.
+
+*Limites* : n = 53, un seul annotateur, aucune réplication. Un protocole complet ferait
+juger plusieurs annotateurs indépendants et mesurerait leur accord **entre eux** avant de
+comparer un juge à eux. Les 53 verdicts sont conservés en base sous l'annotateur
+`claude-opus-5` et consultables dans l'onglet **Annotation**.
+
+### La référence elle-même a un plafond
+
+Le seul désaccord sur 53 est le résultat le plus utile de la mesure, parce qu'il
+n'incrimine pas le juge mais **la référence** :
+
+| Question | Réponse gold | Réponse du système | `contains` | Verdict humain |
+|---|---|---|---|---|
+| qid 278 | `Sam Bankman-Fried` | `Bankman-Fried` | **0** | **1** |
+
+`contains` vérifie mécaniquement qu'une chaîne est incluse dans une autre. Une réponse
+correcte donnée sous forme abrégée est comptée fausse. Sur un corpus saturé de noms
+propres, ce n'est pas un cas limite.
+
+**Conséquence à retenir** : toutes les valeurs de `contains` publiées par le banc sont
+des **bornes basses** de la justesse réelle. Sur cet échantillon l'écart est d'un point
+(0.340 mesuré, 0.358 réel).
+
+**Ce que ça n'invalide pas** : les *comparaisons*. Le biais s'applique identiquement aux
+deux configurations comparées, donc il se soustrait dans l'écart apparié. « `recommended`
+double la justesse de `baseline` » tient ; « la justesse vaut exactement 0.339 » est à
+lire comme « au moins 0.339 ». C'est la raison d'être de la discipline statistique du
+[chapitre 3](#3-la-discipline-statistique) : on publie des écarts testés, pas des
+valeurs absolues.
+
 ### Calibration contre la vérité terrain
 
 Puisque MultiHop-RAG fournit les réponses gold, `native.answer/contains` n'est pas une

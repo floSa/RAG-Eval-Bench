@@ -63,6 +63,13 @@ des résultats.
   ferait apparaître un faux échec de retrieval. Ce qui la remettrait en cause : un
   audit manuel montrant des questions répondables par des documents non listés.
 
+  **Partiellement infirmée pour les réponses** (pas pour les evidences). Un audit manuel
+  de 53 réponses a montré que `contains` compte faux une réponse correcte donnée sous
+  forme abrégée — `Bankman-Fried` pour un gold `Sam Bankman-Fried`. Les valeurs de
+  `contains` sont donc des **bornes basses** : 0.340 mesuré contre 0.358 réel sur cet
+  échantillon. Les comparaisons appariées restent valides, le biais s'annulant dans
+  l'écart. Détail dans [METHODOLOGIE.md](METHODOLOGIE.md#la-référence-elle-même-a-un-plafond).
+
 - **Un échantillon de 200 questions suffit pour départager deux configurations.**
   Vérifié empiriquement : les intervalles de confiance obtenus (± 0,05 sur `recall@3`)
   permettent de conclure sur des écarts de 6 points ou plus. En dessous, il faut
@@ -173,6 +180,12 @@ Tableau complet dans le [README](../README.md#licences--composants).
   juge aléatoire obtient κ ≈ 0 quel que soit son penchant. Le +0.458 de `llama3.2:3b`
   affirme seulement que son accord avec la vérité terrain dépasse le hasard : « mieux
   que rien », pas « fiable ». Il reste sous le repère de 0,6.
+
+  **Le plafond n'est pas la tâche, c'est la taille.** Les mêmes 53 réponses jugées à la
+  main par Claude Opus 5 donnent **κ = +0.958**. Les questions étaient donc jugeables ;
+  ce sont les petits modèles qui ne les jugent pas. L'écart 0.958 / 0.458 chiffre le prix
+  de la contrainte on-premise sur ce poste précis. Ça ne fait pas d'un juge externe une
+  option : il viole la contrainte, et sert d'étalon mesuré une fois sur corpus public.
 
 ### À trancher
 
