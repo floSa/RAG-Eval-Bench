@@ -275,7 +275,7 @@ with tab_annotate:
     if frame.empty:
         st.info("Aucune prediction.")
     else:
-        from .. import db as _db
+        from ragbench import db as _db
 
         with _db.connect() as conn:
             existing = conn.execute(
