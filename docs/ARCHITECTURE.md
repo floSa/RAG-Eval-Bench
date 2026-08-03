@@ -56,11 +56,11 @@ Ports hôte réservés à ce projet dans `~/mes_projets/PORTS.md` : **5432** (pg
 | Base de données | PostgreSQL | 17.10 |
 | Extension vectorielle | pgvector | 0.5.0 (client Python) |
 | Accès base | psycopg | 3.3.4 |
-| Client d'inférence | openai | 1.109.1 |
+| Client d'inférence | openai | 2.52.0 |
 | Validation de configuration | pydantic | 2.13.4 |
-| CLI | typer / rich | 0.27.0 / 13.9.4 |
+| CLI | typer / rich | 0.27.0 / 14.3.4 |
 | Interface | streamlit | 1.60.0 |
-| Évaluation externe | ragas / deepeval | 0.4.3 / 4.1.3 |
+| Évaluation externe | ragas / deepeval | 0.4.3 / 4.1.5 |
 | Tests | pytest | 9.1.1 |
 | Lint | ruff | configuré dans `pyproject.toml` |
 
