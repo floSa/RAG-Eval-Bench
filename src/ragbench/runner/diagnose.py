@@ -106,6 +106,13 @@ def pool_config(cfg: PipelineConfig, max_k: int) -> tuple[PipelineConfig, list[s
         # Le plafond ecarte des passages : il faut un vivier plus large pour
         # en garder encore max_k apres filtrage.
         fetch_k = max(fetch_k, 4 * max_k)
+        # Mesure sur la baseline (fetch_k=20, plafond 2) : 6 questions sur 200
+        # recoivent moins de top_k passages en campagne, faute de vivier.
+        notes.append(
+            f"plafond par document : vivier porte a {fetch_k} ; en campagne, fetch_k="
+            f"{rr.fetch_k} peut s'epuiser et donner moins de top_k passages — la "
+            "courbe peut etre legerement optimiste"
+        )
     elif rr.rerank != "none":
         fetch_k = max(fetch_k, max_k)
         notes.append(
