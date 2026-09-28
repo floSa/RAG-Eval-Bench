@@ -1,0 +1,1578 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Évaluer un RAG</title>
+<meta name="description" content="Tutoriel complet et technique : construire, mesurer et améliorer un système RAG avec ragbench, pas à pas, sur de vraies mesures.">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f3f2ee;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --accent: #2a78d6;
+  --accent-soft: rgba(42,120,214,0.10);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+  --good: #006300; --bad: #d03b3b; --warn-bg: #fff6e0; --warn-ink: #6b4a00;
+  --code-bg: #f0efec;
+  --chunk-a: rgba(42,120,214,0.12); --chunk-b: rgba(235,104,52,0.14); --chunk-o: rgba(27,175,122,0.30);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #222220;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --accent: #3987e5; --accent-soft: rgba(57,135,229,0.16);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --good: #0ca30c; --bad: #e66767; --warn-bg: #2e2612; --warn-ink: #f2d38a;
+    --code-bg: #232321;
+    --chunk-a: rgba(57,135,229,0.22); --chunk-b: rgba(217,89,38,0.24); --chunk-o: rgba(25,158,112,0.40);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #222220;
+  --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --accent: #3987e5; --accent-soft: rgba(57,135,229,0.16);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --good: #0ca30c; --bad: #e66767; --warn-bg: #2e2612; --warn-ink: #f2d38a;
+  --code-bg: #232321;
+  --chunk-a: rgba(57,135,229,0.22); --chunk-b: rgba(217,89,38,0.24); --chunk-o: rgba(25,158,112,0.40);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+body {
+  margin: 0; background: var(--page); color: var(--ink);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+a { color: var(--accent); }
+.layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); max-width: 1180px; margin: 0 auto; }
+nav.toc {
+  position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto;
+  padding: 24px 16px; border-right: 1px solid var(--border); font-size: 14px;
+}
+nav.toc .brand { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+nav.toc .sub { color: var(--muted); margin-bottom: 16px; font-size: 13px; }
+nav.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: ch; }
+nav.toc li { margin: 2px 0; }
+nav.toc a { color: var(--ink-2); text-decoration: none; display: block; padding: 4px 8px; border-radius: 6px; }
+nav.toc a:hover, nav.toc a.active { background: var(--accent-soft); color: var(--ink); }
+main { padding: 24px 40px 80px; min-width: 0; }
+.prose { max-width: 780px; }
+h1 { font-size: 34px; line-height: 1.2; margin: 8px 0 8px; }
+h2 { font-size: 26px; line-height: 1.25; margin: 64px 0 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+h2 .num { color: var(--muted); font-weight: 600; margin-right: 8px; }
+h3 { font-size: 19px; margin: 32px 0 8px; }
+h4 { font-size: 16px; margin: 20px 0 6px; }
+p, li { color: var(--ink); }
+.lead { font-size: 18px; color: var(--ink-2); }
+.muted { color: var(--muted); }
+small { color: var(--ink-2); }
+code, pre, kbd { font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace; font-size: 14px; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 12px 14px; border-radius: 8px; overflow-x: auto; line-height: 1.45; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14.5px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--ink-2); font-weight: 600; background: var(--surface-2); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tablewrap { overflow-x: auto; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin: 16px 0; }
+.callout { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+.callout.warn { border-left-color: #c98500; background: var(--warn-bg); color: var(--warn-ink); }
+.callout.warn * { color: inherit; }
+.callout strong:first-child { display: block; margin-bottom: 2px; }
+.formula { font-family: "Cambria Math", "STIX Two Math", Georgia, serif; font-size: 18px; text-align: center; margin: 14px 0; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; }
+.formula .frac { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; margin: 0 4px; }
+.formula .frac > span:first-child { border-bottom: 1px solid currentColor; padding: 0 4px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pill { display: inline-block; font-size: 12.5px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--ink-2); background: var(--surface-2); }
+.pill.hit { color: var(--good); border-color: currentColor; }
+.pill.miss { color: var(--bad); border-color: currentColor; }
+details { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+details summary { cursor: pointer; font-weight: 600; }
+label { font-size: 14px; color: var(--ink-2); }
+input[type=text], input[type=number], textarea, select {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--axis); border-radius: 6px; padding: 6px 8px; width: 100%;
+}
+textarea { min-height: 110px; resize: vertical; font-family: inherit; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+button {
+  font: inherit; font-size: 14px; cursor: pointer; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--axis); border-radius: 6px; padding: 6px 12px;
+}
+button:hover { background: var(--surface-2); }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 14px; margin: 10px 0; }
+.out { font-variant-numeric: tabular-nums; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 12px 0; }
+.kpi { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; }
+.kpi .v { font-size: 22px; font-weight: 700; }
+.kpi .l { font-size: 12.5px; color: var(--ink-2); }
+.chunk { display: block; padding: 6px 8px; margin: 4px 0; border-radius: 6px; white-space: pre-wrap; font-size: 13.5px; }
+.chunk:nth-child(odd) { background: var(--chunk-a); }
+.chunk:nth-child(even) { background: var(--chunk-b); }
+.chunk mark { background: var(--chunk-o); color: inherit; border-radius: 3px; }
+.chunk .tag { font-size: 11.5px; color: var(--ink-2); margin-right: 6px; font-weight: 600; }
+.chart { position: relative; margin: 8px 0; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--ink-2); margin: 6px 0; }
+.legend .key { display: inline-block; width: 16px; height: 2px; vertical-align: middle; margin-right: 6px; border-radius: 2px; }
+.legend .key.box { height: 10px; width: 10px; border-radius: 2px; }
+.tooltip {
+  position: absolute; pointer-events: none; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.12); border-radius: 8px;
+  padding: 8px 10px; font-size: 13px; min-width: 150px; opacity: 0; transition: opacity .08s; z-index: 5;
+}
+.tooltip .t { color: var(--ink-2); font-size: 12px; margin-bottom: 4px; }
+.tooltip .row { display: flex; align-items: center; gap: 8px; }
+.tooltip .row b { font-variant-numeric: tabular-nums; }
+.tooltip .row .lk { width: 12px; height: 2px; border-radius: 2px; }
+.tooltip .row span.n { color: var(--ink-2); }
+.toggle-table { font-size: 13px; padding: 3px 10px; }
+.diagram svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.diagram { overflow-x: auto; }
+.diagram svg { min-width: 640px; }
+.theme-btn { margin-top: 16px; font-size: 13px; }
+.steps { counter-reset: s; list-style: none; padding-left: 0; }
+.steps > li { counter-increment: s; position: relative; padding-left: 38px; margin: 10px 0; }
+.steps > li::before { content: counter(s); position: absolute; left: 0; top: 1px; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center; }
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  nav.toc { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); padding: 16px; }
+  nav.toc ol { columns: 2; column-gap: 12px; }
+  main { padding: 16px 16px 64px; }
+  h1 { font-size: 28px; }
+  .grid2 { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) { nav.toc ol { columns: 1; } }
+@media print { nav.toc { display: none; } .layout { display: block; } }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" aria-label="Sommaire">
+  <div class="brand">Évaluer un RAG</div>
+  <div class="sub">Tutoriel ragbench — sept. 2026</div>
+  <ol id="toc-list">
+    <li><a href="#intro">0. Avant de commencer</a></li>
+    <li><a href="#rag">1. Le RAG en cinq minutes</a></li>
+    <li><a href="#pourquoi">2. Pourquoi évaluer est difficile</a></li>
+    <li><a href="#dataset">3. Le jeu de données</a></li>
+    <li><a href="#index">4. Construire l'index</a></li>
+    <li><a href="#retrieval">5. Retrouver les passages</a></li>
+    <li><a href="#mesure-retrieval">6. Mesurer la recherche</a></li>
+    <li><a href="#generation">7. Mesurer la réponse</a></li>
+    <li><a href="#juges">8. Les juges LLM</a></li>
+    <li><a href="#stats">9. Trancher : la statistique</a></li>
+    <li><a href="#tp">10. TP : le diagnostic du 28/09</a></li>
+    <li><a href="#methode">11. La méthode d'ablation</a></li>
+    <li><a href="#apercu">12. Vos propres documents</a></li>
+    <li><a href="#exercices">13. Exercices</a></li>
+    <li><a href="#glossaire">14. Glossaire</a></li>
+  </ol>
+  <button class="theme-btn" id="theme-btn" type="button">Thème : auto</button>
+</nav>
+
+<main>
+<div class="prose">
+
+<!-- ================================================================ -->
+<section id="intro">
+<p class="muted">Tutoriel · ragbench · données mesurées le 28/09/2026</p>
+<h1>Évaluer un RAG, pour de vrai</h1>
+<p class="lead">Construire un système de questions-réponses sur des documents est facile. Savoir
+s'il marche, <em>pourquoi</em> il échoue, et si une modification l'a réellement amélioré, l'est
+beaucoup moins. Ce tutoriel déroule toute la chaîne, du découpage des documents jusqu'au test
+statistique qui tranche, sur un banc d'essai réel et avec les chiffres qu'il a produits.</p>
+
+<h3>Ce que vous saurez faire à la fin</h3>
+<ul>
+  <li>Expliquer chaque étage d'un RAG et ce qu'on peut y régler.</li>
+  <li>Calculer à la main recall@k, MRR, nDCG, F1 par tokens et κ de Cohen, et savoir quand chacun ment.</li>
+  <li>Distinguer une métrique déterministe d'un <strong>juge LLM</strong>, et mesurer la fiabilité de ce dernier.</li>
+  <li>Comparer deux configurations avec un <strong>test apparié</strong> et un intervalle de confiance, corriger pour les comparaisons multiples.</li>
+  <li>Lire un diagnostic réel et en déduire quoi améliorer en priorité.</li>
+</ul>
+
+<h3>Prérequis</h3>
+<p>Python courant, notions de probabilités (moyenne, variance, intervalle de confiance), et
+avoir déjà vu ce qu'est un embedding. Tout le reste est expliqué. Chaque chapitre contient
+une démonstration interactive : modifiez les valeurs, c'est le meilleur moyen de comprendre.</p>
+
+<h3>Le banc utilisé</h3>
+<p><code>ragbench</code> est un banc d'évaluation <strong>100 % local</strong> : les documents,
+les modèles (servis par Ollama) et la base (PostgreSQL + pgvector) tournent sur la machine.
+Aucune donnée ne sort. Toutes les mesures de ce tutoriel ont été faites sur un portable sans
+GPU (Intel Core Ultra 7, 16 cœurs, 15 Go de RAM) — ce qui a son importance, on le verra.</p>
+
+<details>
+<summary>Installer et lancer le banc (15 minutes, hors téléchargements)</summary>
+<pre><code># 1. Base PostgreSQL + pgvector (port hôte 5432 par défaut)
+docker compose up -d db
+# si le port 5432 est déjà pris : DB_PORT=5435 docker compose up -d db
+#   puis préfixer chaque commande ragbench par DB_PORT=5435
+
+# 2. Environnement Python (uv) et configuration
+uv sync --extra ui --extra rerank
+cp .env.example .env
+
+# 3. Modèles (Ollama doit tourner sur localhost:11434)
+ollama pull nomic-embed-text      # embedder, 274 Mo
+ollama pull qwen3.5:4b            # générateur, 3,4 Go
+ollama pull llama3.2:3b           # juge, 2 Go
+
+# 4. Schéma, corpus, vérification
+uv run ragbench db init
+mkdir -p data/raw
+curl -sSL -o data/raw/corpus.json https://huggingface.co/datasets/yixuantt/MultiHopRAG/resolve/main/corpus.json
+curl -sSL -o data/raw/MultiHopRAG.json https://huggingface.co/datasets/yixuantt/MultiHopRAG/resolve/main/MultiHopRAG.json
+uv run ragbench dataset load multihop-rag --sample 200
+uv run ragbench doctor</code></pre>
+<p><code>doctor</code> doit afficher Postgres, l'extension <code>vector</code> et la liste des
+modèles. Lancez-le toujours avant une campagne : découvrir à la question 150 qu'un modèle
+manque coûte une heure.</p>
+</details>
+
+<div class="callout warn"><strong>Piège matériel à connaître d'emblée</strong>
+Sur un processeur hybride (cœurs performance + cœurs efficacité), laisser un moteur
+d'inférence utiliser les 16 cœurs <em>divise</em> le débit au lieu de le multiplier.
+Mesuré sur cette machine : l'embedder passe de 0,9 à 7,8 textes/s avec 6 threads au lieu
+de 16. Avec Ollama, on fige le réglage dans un modèle dérivé :
+<code>FROM nomic-embed-text:latest</code> + <code>PARAMETER num_thread 6</code>, puis
+<code>ollama create nomic-embed-text:latest -f Modelfile</code>.</div>
+</section>
+
+<!-- ================================================================ -->
+<section id="rag">
+<h2><span class="num">1</span>Le RAG en cinq minutes</h2>
+<p>Un <strong>RAG</strong> (<em>Retrieval-Augmented Generation</em>) répond à une question en
+deux temps : il <strong>cherche</strong> d'abord les passages de documents qui parlent du
+sujet, puis il demande à un modèle de langage de <strong>rédiger</strong> une réponse à partir
+de ces seuls passages. Le modèle ne répond donc pas de mémoire : il lit.</p>
+
+<div class="card diagram" role="img" aria-label="Schéma du pipeline RAG : hors ligne, les documents sont découpés, vectorisés et indexés ; en ligne, la question est vectorisée, les passages proches sont retrouvés, éventuellement reclassés, puis insérés dans un prompt envoyé au générateur.">
+<svg viewBox="0 0 760 290" id="pipeline-svg"></svg>
+</div>
+
+<p>Deux phases, à ne pas confondre :</p>
+<ul>
+  <li><strong>Hors ligne (une fois)</strong> : les documents sont <em>découpés</em> en passages
+  (chunks), chaque passage est transformé en vecteur par un modèle d'<em>embedding</em>, et les
+  vecteurs sont stockés dans un <em>index</em>.</li>
+  <li><strong>En ligne (à chaque question)</strong> : la question est vectorisée, on récupère
+  les <code>top_k</code> passages les plus proches, on peut les <em>reclasser</em>, puis on les
+  colle dans un prompt envoyé au <em>générateur</em>.</li>
+</ul>
+<p>Chaque boîte du schéma est un réglage possible — taille des passages, modèle d'embedding,
+mode de recherche, nombre de passages, prompt… C'est précisément ce qui rend l'évaluation
+nécessaire : il y a des dizaines de combinaisons, et l'intuition se trompe souvent sur celles
+qui marchent.</p>
+
+<p>Le prompt effectivement envoyé par le banc (gabarit <code>default</code>) :</p>
+<pre><code>Answer the question using only the context below.
+If the context does not contain the answer, reply exactly: INSUFFICIENT_CONTEXT
+
+Context:
+[1] Title: … Source: The New York Times Published: 2023-11-17
+    …texte du passage…
+[2] …
+
+Question: {question}
+
+Answer:</code></pre>
+<p>La ligne <code>INSUFFICIENT_CONTEXT</code> est la <strong>consigne d'abstention</strong> :
+sans elle, impossible de mesurer si le système sait dire « je ne sais pas ».</p>
+</section>
+
+<!-- ================================================================ -->
+<section id="pourquoi">
+<h2><span class="num">2</span>Pourquoi évaluer est difficile</h2>
+<p>Évaluer un RAG, ce n'est pas produire un score. C'est pouvoir répondre à : <em>« cette
+modification a-t-elle amélioré quelque chose, et où ça casse-t-il ? »</em> Trois exigences
+en découlent, et elles structurent tout le banc.</p>
+
+<ol class="steps">
+  <li><strong>Attribuer la faute.</strong> Une mauvaise réponse peut venir de la recherche
+  (les bons passages n'ont pas été trouvés) ou de la génération (ils étaient là, mais le modèle
+  les a mal lus). Un score global ne dit pas lequel corriger. Le banc mesure donc
+  <strong>trois étages séparément</strong> : recherche, génération, bout en bout.</li>
+  <li><strong>Trancher statistiquement.</strong> Sur 200 questions, deux points d'écart sont
+  souvent du bruit. Toute comparaison passe par un <strong>test apparié</strong> avec
+  intervalle de confiance, jamais par deux moyennes mises côte à côte (chapitre 9).</li>
+  <li><strong>Se méfier des juges.</strong> Quand il n'y a pas de bonne réponse à comparer,
+  on fait noter par un second LLM. Ce juge a ses biais ; non confronté à une référence, il
+  produit une opinion, pas une mesure (chapitre 8).</li>
+</ol>
+
+<h3>La règle et ce qu'on mesure</h3>
+<p>Le banc distingue deux familles de briques, et la distinction est fondamentale :</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Famille</th><th>Rôle</th><th>Exemples</th></tr></thead>
+<tbody>
+<tr><td><strong>Outils d'évaluation</strong> — la règle</td><td>Mesurer</td><td>recall@k, nuggets, exact match, juges calibrés, Ragas, DeepEval</td></tr>
+<tr><td><strong>Techniques d'amélioration</strong> — ce qu'on mesure</td><td>Changer les réponses</td><td>découpage, recherche hybride, reranking, prompts, graphe de connaissance</td></tr>
+</tbody></table></div>
+<p><strong>La règle reste fixe, seules les techniques bougent.</strong> Si l'on changeait
+de métrique en même temps que de technique, on ne saurait plus si le score a bougé à cause
+de l'une ou de l'autre. Conséquence contre-intuitive : « ajouter un juge LLM » n'améliore
+pas un RAG — un juge ne change aucune réponse, il les note.</p>
+
+<h3>L'identité d'une configuration</h3>
+<p>Chaque configuration est un fichier YAML versionné. Son <strong>hash</strong> (SHA-256 du
+contenu, hors nom et description) est son identité : deux runs de même hash sont
+comparables. Un second hash, l'<code>index_hash</code>, ne couvre que le découpage et
+l'embedder — changer <code>top_k</code> ne réindexe donc pas 600 documents.</p>
+<pre><code>retrieval:
+  mode: dense            # dense | lexical | hybrid
+  top_k: 5               # passages donnés au générateur
+  fetch_k: 20            # vivier avant reranking / plafond
+  max_per_document: 2    # au plus 2 passages par article
+  rerank: none           # none | llm | cross_encoder</code></pre>
+<div class="callout"><strong>Le hash ne couvre pas tout</strong>
+Il décrit la configuration, pas le code ni le serveur d'inférence. Au chapitre 10, on verra
+qu'une même configuration a donné des chiffres différents sur deux machines. D'où la règle :
+ne comparer que des runs produits sur le même poste et la même version du code.</div>
+</section>
+
+<!-- ================================================================ -->
+<section id="dataset">
+<h2><span class="num">3</span>Le jeu de données : MultiHop-RAG</h2>
+<p>On ne peut rien mesurer sans <strong>vérité terrain</strong> : pour chaque question, il
+faut savoir quelle est la bonne réponse et quels documents la contiennent. Le banc utilise
+<a href="https://huggingface.co/datasets/yixuantt/MultiHopRAG">MultiHop-RAG</a> (Tang &amp;
+Yang, 2024, licence ODC-BY), conçu spécifiquement pour évaluer des RAG.</p>
+<div class="kpis">
+  <div class="kpi"><div class="v">609</div><div class="l">articles de presse (anglais, sept.–déc. 2023)</div></div>
+  <div class="kpi"><div class="v">2 556</div><div class="l">questions au total</div></div>
+  <div class="kpi"><div class="v">200</div><div class="l">questions échantillonnées pour l'évaluation</div></div>
+  <div class="kpi"><div class="v">2 à 4</div><div class="l">articles nécessaires par question</div></div>
+</div>
+<p>« Multi-hop » signifie que la réponse exige de combiner plusieurs documents. Quatre
+types de questions :</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Type</th><th class="num">Nombre</th><th>Ce qu'il teste</th></tr></thead>
+<tbody>
+<tr><td>comparaison</td><td class="num">856</td><td>« L'article A et l'article B disent-ils la même chose ? »</td></tr>
+<tr><td>inférence</td><td class="num">816</td><td>Relier des faits de plusieurs articles pour déduire une entité</td></tr>
+<tr><td>temporelle</td><td class="num">583</td><td>Ordonner des événements dans le temps</td></tr>
+<tr><td>sans réponse</td><td class="num">301</td><td>La réponse n'est <em>pas</em> dans le corpus : le système doit s'abstenir</td></tr>
+</tbody></table></div>
+
+<h3>Une vraie question du banc</h3>
+<div class="card">
+<p><strong>Question</strong> — « Does the Sporting News article credit Will Lutz with making
+a successful field goal, while The New York Times article discusses Connor Bedard's efforts
+to understand goalies […]? »</p>
+<p><strong>Réponse attendue</strong> — <code>Yes</code></p>
+<p><strong>Faits de référence</strong> (fournis par le jeu de données) :</p>
+<ol>
+  <li><em>Sporting News</em>, « Vikings vs. Broncos… » : « FIELD GOAL — Will Lutz buries his fourth field goal of the day, this time from 37 yards. »</li>
+  <li><em>The New York Times</em>, « He's Hockey's Brightest Young Star… » : « While goalies are trying to figure out Bedard, he's been putting in the time to do the same with them. »</li>
+</ol>
+</div>
+<p>Ce qui rend ce jeu précieux : il fournit, pour chaque question, les <strong>articles</strong>
+et les <strong>faits exacts</strong> à retrouver. On peut donc mesurer la recherche sans
+aucun juge LLM — gratuitement et de façon reproductible. On retrouvera cette question au
+chapitre 6.</p>
+
+<h3>Échantillonnage stratifié</h3>
+<p>Évaluer les 2 556 questions à chaque essai coûterait des heures. Le banc tire
+<strong>200 questions</strong> en respectant la proportion de chaque type (échantillon
+<em>stratifié</em>, graine fixée à 42 : ce sont toujours les mêmes). Les 2 356 autres restent
+en réserve (<em>split</em> <code>pool</code>) pour agrandir l'échantillon quand un écart est
+trop serré pour conclure. Parmi les 200, <strong>177 ont une réponse</strong> dans le corpus ;
+les 23 autres servent à mesurer l'abstention.</p>
+<div class="callout"><strong>Limite à garder en tête</strong>
+Articles de presse en anglais uniquement : pas de PDF, pas de tableaux, pas de documents
+d'entreprise quasi identiques. Un résultat obtenu ici ne se transpose pas automatiquement à
+vos documents — c'est l'objet du chapitre 12.</div>
+</section>
+
+<!-- ================================================================ -->
+<section id="index">
+<h2><span class="num">4</span>Construire l'index</h2>
+
+<h3>4.1 Découper les documents</h3>
+<p>Un article fait plusieurs milliers de caractères ; un modèle d'embedding résume mal un
+texte long en un seul vecteur, et le générateur a un contexte limité. On découpe donc en
+<strong>passages</strong> (chunks). Le banc mesure la taille en <strong>caractères</strong>,
+pas en tokens : c'est une unité neutre, indépendante du tokenizer d'un modèle donné
+(compter ~4 caractères par token en anglais).</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Stratégie</th><th>Principe</th></tr></thead>
+<tbody>
+<tr><td><code>fixed</code></td><td>Fenêtre glissante aveugle : coupe tous les <em>n</em> caractères, même au milieu d'un mot. Sert de témoin naïf.</td></tr>
+<tr><td><code>recursive</code></td><td>Coupe d'abord aux paragraphes, puis aux lignes, aux phrases, aux virgules, aux espaces — ne descend d'un cran que si un morceau reste trop long. Défaut du banc.</td></tr>
+<tr><td><code>sentence</code></td><td>Regroupe des phrases entières sans jamais en couper une.</td></tr>
+<tr><td><code>document</code></td><td>Un seul passage par document.</td></tr>
+</tbody></table></div>
+<p>Le <strong>recouvrement</strong> (<em>overlap</em>) recopie la fin du passage précédent au
+début du suivant, pour qu'une information à cheval sur une frontière ne soit pas perdue.</p>
+
+<div class="card">
+<h4 style="margin-top:0">Démo — le découpage du banc, en direct</h4>
+<p class="muted" style="margin-top:0">Même algorithme que <code>rag/chunking.py</code>. Le recouvrement apparaît surligné.</p>
+<div class="controls">
+  <div><label for="ck-strategy">Stratégie</label>
+    <select id="ck-strategy"><option value="recursive">recursive</option><option value="sentence">sentence</option><option value="fixed">fixed</option></select></div>
+  <div><label for="ck-size">Taille : <span id="ck-size-v" class="out"></span> caractères</label><input id="ck-size" type="range" min="80" max="600" step="10" value="220"></div>
+  <div><label for="ck-overlap">Recouvrement : <span id="ck-overlap-v" class="out"></span> caractères</label><input id="ck-overlap" type="range" min="0" max="120" step="5" value="30"></div>
+</div>
+<label for="ck-text">Texte</label>
+<textarea id="ck-text">Connor Bedard has been the most talked-about rookie of the season. His shot release is unusually fast, and goalies across the league have started studying his tape.
+
+While goalies are trying to figure out Bedard, he's been putting in the time to do the same with them. He watches hours of video after each game.
+
+The Blackhawks coaching staff say his work ethic is what separates him. "It's not the NHL that he was playing in the last few years," Davidson said, "but the level of performance is remarkable."</textarea>
+<p class="out" id="ck-summary"></p>
+<div id="ck-out"></div>
+</div>
+
+<h3>4.2 L'en-tête contextuel</h3>
+<p>Découpé, un passage perd son contexte : on ne sait plus de quel journal ni de quelle date
+il vient. Or les questions de MultiHop-RAG le demandent explicitement (« as reported by The
+Verge »). Le banc recopie donc un <strong>en-tête</strong> en tête de <em>chaque</em> passage :</p>
+<pre><code>Title: He's Hockey's Brightest Young Star. This Is What Makes His Shot So Special.
+Source: The New York Times
+Published: 2023-11-17
+
+While goalies are trying to figure out Bedard, he's been putting in the time…</code></pre>
+<p>Mesuré sur le banc : <strong>+0,102 de justesse</strong> (p &lt; 0,001). Sans en-tête, le
+générateur retrouvait le bon article mais s'abstenait, faute de pouvoir vérifier la source.
+C'est l'idée du <em>Contextual Retrieval</em> publiée par Anthropic en 2024.</p>
+
+<h3>4.3 Vectoriser et indexer</h3>
+<p>Chaque passage est converti en vecteur de 768 dimensions par <code>nomic-embed-text</code>.
+Ce modèle attend un préfixe : <code>search_document: </code> côté corpus,
+<code>search_query: </code> côté question — l'oublier coûte plusieurs points de recall. Les
+vecteurs sont stockés dans PostgreSQL avec l'extension <code>pgvector</code>.</p>
+<p>La proximité entre la question <em>q</em> et un passage <em>d</em> est la
+<strong>similarité cosinus</strong> :</p>
+<div class="formula">cos(q, d) = <span class="frac"><span>q · d</span><span>‖q‖ ‖d‖</span></span></div>
+<p>Le banc fait un <strong>parcours exact</strong> (on compare la question à tous les
+passages), sans index approximatif de type HNSW : un index approximatif perd un peu de recall,
+et cette perte se confondrait avec la qualité du modèle d'embedding. On mesurerait l'index,
+pas la recherche. Sur 8 000 passages, le parcours exact prend quelques dizaines de
+millisecondes.</p>
+<p class="muted">Ordre de grandeur mesuré : 609 articles → 8 000 passages (1 000 caractères,
+recouvrement 150), indexés en ~30 minutes sur CPU.</p>
+</section>
+
+<!-- ================================================================ -->
+<section id="retrieval">
+<h2><span class="num">5</span>Retrouver les passages</h2>
+
+<h3>5.1 Trois modes de recherche</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Mode</th><th>Principe</th><th>Fort pour</th></tr></thead>
+<tbody>
+<tr><td><code>dense</code></td><td>Similarité cosinus entre vecteurs</td><td>Le sens, les reformulations</td></tr>
+<tr><td><code>lexical</code></td><td>Plein-texte PostgreSQL (<code>ts_rank_cd</code>) sur les mots racinisés</td><td>Les noms propres, les chiffres, les termes exacts</td></tr>
+<tr><td><code>hybrid</code></td><td>Fusion des deux classements par RRF</td><td>Les deux à la fois</td></tr>
+</tbody></table></div>
+<div class="callout warn"><strong>Un bug silencieux, trouvé en exécutant</strong>
+La première version de la recherche lexicale utilisait <code>plainto_tsquery</code>, qui
+relie les mots par ET. Sur des questions de 30 à 60 mots, <em>aucun</em> passage ne les
+contenait tous : zéro résultat, aucune erreur, juste une abstention sur chaque question.
+Correctif : relier les mots par OU et laisser <code>ts_rank_cd</code> classer. Leçon : un
+système d'évaluation doit être lui-même testé.</div>
+
+<h3>5.2 La fusion RRF</h3>
+<p>Les scores dense (cosinus, entre 0 et 1) et lexical (non borné) ne sont pas sur la même
+échelle : les additionner laisserait l'échelle décider du poids. La <strong>Reciprocal Rank
+Fusion</strong> ne regarde que les <em>rangs</em> :</p>
+<div class="formula">RRF(d) = Σ<sub>listes ℓ</sub> <span class="frac"><span>1</span><span>k + rang<sub>ℓ</sub>(d)</span></span> &nbsp;&nbsp; avec k = 60</div>
+<div class="card">
+<h4 style="margin-top:0">Démo — fusionner deux classements</h4>
+<div class="controls">
+  <div><label for="rrf-dense">Classement dense (du meilleur au moins bon)</label><input id="rrf-dense" type="text" value="A, B, C, D, E"></div>
+  <div><label for="rrf-lex">Classement lexical</label><input id="rrf-lex" type="text" value="C, A, F, B, G"></div>
+  <div><label for="rrf-k">Constante k : <span id="rrf-k-v" class="out"></span></label><input id="rrf-k" type="range" min="1" max="100" value="60"></div>
+</div>
+<div class="tablewrap" id="rrf-out"></div>
+<p class="muted">Remarquez : C, 3<sup>e</sup> en dense mais 1<sup>er</sup> en lexical, dépasse B. Un document présent dans les deux listes est favorisé. Plus k est grand, plus les rangs se valent.</p>
+</div>
+
+<h3>5.3 Le plafond par document</h3>
+<p>Sans précaution, un article très proche de la question occupe les 5 places avec ses propres
+passages. En multi-hop, où il faut 2 à 4 articles <em>différents</em>, c'est fatal. La
+configuration de référence garde au plus <strong>2 passages par article</strong>
+(<code>max_per_document: 2</code>) et, pour avoir de quoi remplacer, remonte d'abord un
+<strong>vivier</strong> de <code>fetch_k = 20</code> candidats.</p>
+<div class="callout warn"><strong>Effet de bord mesuré</strong>
+Quand les 20 candidats viennent de seulement deux articles, le plafond n'en laisse que
+4 : le générateur reçoit moins que les 5 passages prévus. Constaté sur 6 questions sur 200
+de la baseline. Remède : un vivier plus large.</div>
+
+<h3>5.4 Le reranking</h3>
+<p>Reclasser les candidats avec un modèle plus fin que le cosinus. Deux variantes dans le banc :</p>
+<ul>
+  <li><strong><code>llm</code></strong> : le juge note chaque candidat de 0 à 3 (« pointwise »).
+  Coûte <code>fetch_k</code> appels LLM par question — 20 appels ici.</li>
+  <li><strong><code>cross_encoder</code></strong> : un petit modèle dédié lit la paire
+  (question, passage) d'un seul tenant et produit un score de pertinence. Bien plus rapide :
+  ~2 s de CPU pour 50 passages avec <code>ms-marco-MiniLM-L-12-v2</code> (34 Mo, ONNX).</li>
+</ul>
+<pre><code>retrieval:
+  rerank: cross_encoder
+  rerank_model: flashrank:ms-marco-MiniLM-L-12-v2
+  fetch_k: 50            # 50 candidats reclassés, 5 gardés</code></pre>
+<p>Le reranking est-il utile ? On ne le suppose pas, on le mesure — réponse au chapitre 10,
+et elle surprend.</p>
+</section>
+
+<!-- ================================================================ -->
+<section id="mesure-retrieval">
+<h2><span class="num">6</span>Mesurer la recherche</h2>
+<p>Ce sont les seules métriques du banc qui soient <strong>déterministes et gratuites</strong> :
+aucun juge, donc aucun biais de juge, et elles se recalculent instantanément. Toute campagne
+devrait commencer par elles : si le recall est à 0,3, aucun réglage de prompt ne sauvera
+la génération.</p>
+
+<h3>6.1 Au niveau du document</h3>
+<p>Notations : <em>G</em> l'ensemble des articles de référence, et <em>R<sub>k</sub></em> les
+<em>k</em> premiers articles remontés, après dédoublonnage (deux passages du même article
+comptent une fois, au meilleur rang — la vérité terrain est au niveau de l'article).</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Métrique</th><th>Formule</th><th>Question posée</th></tr></thead>
+<tbody>
+<tr><td>recall@k</td><td>|R<sub>k</sub> ∩ G| / |G|</td><td>Quelle part des bons articles a-t-on trouvée ?</td></tr>
+<tr><td>precision@k</td><td>|R<sub>k</sub> ∩ G| / k</td><td>Quelle part des résultats est pertinente ?</td></tr>
+<tr><td>hit_rate@k</td><td>1 si R<sub>k</sub> ∩ G ≠ ∅, sinon 0</td><td>A-t-on trouvé au moins un bon article ?</td></tr>
+<tr><td>MRR</td><td>1 / rang du premier bon article</td><td>Le premier bon résultat arrive-t-il tôt ?</td></tr>
+<tr><td>nDCG@k</td><td>DCG@k / IDCG@k</td><td>Les bons résultats sont-ils en haut ?</td></tr>
+</tbody></table></div>
+<div class="formula">DCG@k = Σ<sub>i=1..k</sub> <span class="frac"><span>rel<sub>i</sub></span><span>log<sub>2</sub>(i + 1)</span></span></div>
+<p>avec rel<sub>i</sub> = 1 si l'article au rang <em>i</em> est pertinent, 0 sinon ; et
+<strong>IDCG@k</strong> = le DCG du meilleur classement <em>réalisable</em>, soit
+min(|G|, k) articles pertinents en tête.</p>
+<p>La borne <code>min(|G|, k)</code> est un choix délibéré : sans elle, une configuration à
+petit <code>top_k</code> serait pénalisée pour son <code>top_k</code> et non pour la qualité
+de son classement.</p>
+
+<h3>6.2 Calcul à la main sur la vraie question</h3>
+<p>Pour la question Lutz / Bedard, la baseline remonte 4 passages, issus de deux articles :</p>
+<div class="tablewrap"><table>
+<thead><tr><th class="num">Rang</th><th>Article remonté</th><th class="num">Cosinus</th><th></th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td>NYT — « He's Hockey's Brightest Young Star »</td><td class="num">0,729</td><td><span class="pill hit">référence</span></td></tr>
+<tr><td class="num">2</td><td>NYT — même article, autre passage</td><td class="num">0,729</td><td><span class="pill hit">référence</span></td></tr>
+<tr><td class="num">3</td><td>Sporting News — « Blackhawks vs. Penguins… Connor Bedard's NHL debut »</td><td class="num">0,687</td><td><span class="pill miss">intrus</span></td></tr>
+<tr><td class="num">4</td><td>Sporting News — même article, autre passage</td><td class="num">0,674</td><td><span class="pill miss">intrus</span></td></tr>
+</tbody></table></div>
+<p>L'article Sporting News de référence (celui sur Will Lutz) n'est pas remonté. À sa place,
+un <strong>autre</strong> article Sporting News qui parle… de Bedard. Même source, même
+joueur : c'est exactement le piège des <strong>documents proches</strong>.</p>
+<p>Après dédoublonnage, R = [NYT, SN-Bedard] et G = {NYT, SN-Lutz} :</p>
+<ul>
+  <li>recall@5 = 1/2 = <strong>0,5</strong> — hit_rate@5 = <strong>1</strong> — MRR = 1/1 = <strong>1</strong></li>
+  <li>DCG = 1/log<sub>2</sub>(2) = 1 ; IDCG = 1 + 1/log<sub>2</sub>(3) = 1,631 ; nDCG@5 = <strong>0,613</strong></li>
+</ul>
+<p>Le MRR parfait masque un échec complet sur la moitié de la question : c'est pour cela qu'on
+publie toujours plusieurs métriques.</p>
+
+<div class="card">
+<h4 style="margin-top:0">Démo — calculateur de métriques de recherche</h4>
+<p class="muted" style="margin-top:0">Cochez les rangs qui contiennent un article de référence (articles distincts).</p>
+<div class="controls" id="ir-ranks"></div>
+<div class="controls">
+  <div><label for="ir-gold">Nombre d'articles de référence |G|</label><input id="ir-gold" type="number" min="1" max="10" value="2"></div>
+</div>
+<div class="kpis" id="ir-out"></div>
+</div>
+
+<h3>6.3 Au niveau du fait : les nuggets</h3>
+<p>Avoir le bon article ne suffit pas : il faut le bon <em>paragraphe</em>. Un
+<strong>nugget</strong> (pépite) est un fait atomique de la vérité terrain. On vérifie s'il
+figure dans les passages remontés :</p>
+<ul>
+  <li><code>nugget_recall</code> : part des faits d'une question couverts par les passages ;</li>
+  <li><code>nugget_full_coverage</code> : part des questions dont <strong>tous</strong> les faits sont couverts — la condition pour qu'une réponse multi-hop soit possible.</li>
+</ul>
+<p>En mode <em>lexical</em> (déterministe), un fait est couvert si un passage contient au moins
+<strong>60 %</strong> de ses mots pleins (minuscules, mots-outils retirés, mots de plus de
+2 lettres). Le ratio porte sur les mots du <em>fait</em> : un long passage n'est pas avantagé.</p>
+<div class="card">
+<h4 style="margin-top:0">Démo — le fait est-il couvert ?</h4>
+<label for="ng-fact">Fait de référence</label>
+<input id="ng-fact" type="text" value="Will Lutz buries his fourth field goal of the day, this time from 37 yards.">
+<label for="ng-passage" style="display:block;margin-top:8px">Passage remonté</label>
+<textarea id="ng-passage">Late in the fourth quarter, Lutz made his fourth field goal of the night from 37 yards out to give Minnesota the lead.</textarea>
+<div class="controls"><div><label for="ng-th">Seuil : <span id="ng-th-v" class="out"></span></label><input id="ng-th" type="range" min="0.3" max="1" step="0.05" value="0.6"></div></div>
+<p class="out" id="ng-out"></p>
+</div>
+<p>Essayez de reformuler le passage : le critère lexical rate les paraphrases (« kicked a
+37-yard field goal »). C'est sa limite, et la raison d'exister d'un mode <code>judge</code> où
+un LLM tranche — au prix de ses propres biais.</p>
+</section>
+
+<!-- ================================================================ -->
+<section id="generation">
+<h2><span class="num">7</span>Mesurer la réponse</h2>
+
+<h3>7.1 Comparer à la réponse de référence</h3>
+<p>Les réponses de MultiHop-RAG font 1 à 3 mots (« Yes », « Sam Bankman-Fried »). Trois
+mesures, après <strong>normalisation SQuAD</strong> (minuscules, ponctuation et articles
+<em>a/an/the</em> retirés) :</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Métrique</th><th>Définition</th><th>Piège</th></tr></thead>
+<tbody>
+<tr><td>exact match (<code>em</code>)</td><td>Réponse normalisée = référence normalisée</td><td>« The individual is Sam Bankman-Fried » compte faux</td></tr>
+<tr><td><code>contains</code></td><td>La référence apparaît dans la réponse ; pour Yes/No, le <em>premier mot</em> doit être égal</td><td>Sinon « …it is not yes… » passerait pour bon</td></tr>
+<tr><td><code>token_f1</code></td><td>Moyenne harmonique précision/rappel sur les mots communs</td><td>Récompense une réponse partiellement juste</td></tr>
+</tbody></table></div>
+<div class="card">
+<h4 style="margin-top:0">Démo — em, contains, F1</h4>
+<div class="grid2">
+  <div><label for="ans-pred">Réponse du système</label><input id="ans-pred" type="text" value="The individual is Sam Bankman-Fried."></div>
+  <div><label for="ans-gold">Référence</label><input id="ans-gold" type="text" value="Sam Bankman-Fried"></div>
+</div>
+<div class="kpis" id="ans-out"></div>
+<p class="muted out" id="ans-detail"></p>
+</div>
+
+<h3>7.2 Savoir dire « je ne sais pas »</h3>
+<p>Un système qui répond toujours se trompe avec assurance sur les questions sans réponse. On
+mesure donc deux choses, <strong>toujours ensemble</strong> :</p>
+<ul>
+  <li><strong>rejet correct</strong> (<em>negative rejection</em>) : sur les questions sans réponse, part des abstentions ;</li>
+  <li><strong>fausses abstentions</strong> : sur les questions <em>avec</em> réponse, part des refus.</li>
+</ul>
+<p>Un rejet correct de 1,000 obtenu en refusant <em>tout</em> ne vaut rien. Mesuré sur le
+banc (générateur <code>gemma4:e4b</code>) :</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Prompt</th><th class="num">contains</th><th class="num">exact match</th><th class="num">fausses abstentions</th><th class="num">rejet correct</th></tr></thead>
+<tbody>
+<tr><td><code>default</code></td><td class="num">0,169</td><td class="num">0,119</td><td class="num">0,729</td><td class="num">1,000</td></tr>
+<tr><td>sans consigne d'abstention</td><td class="num">0,243</td><td class="num">0,040</td><td class="num">0,644</td><td class="num">0,783</td></tr>
+<tr><td><code>cited</code> (citer [n])</td><td class="num">0,203</td><td class="num">0,000</td><td class="num">0,684</td><td class="num">1,000</td></tr>
+<tr><td><code>decompose</code> (faits puis réponse)</td><td class="num"><strong>0,266</strong></td><td class="num"><strong>0,209</strong></td><td class="num"><strong>0,610</strong></td><td class="num">1,000</td></tr>
+</tbody></table></div>
+<p>Deux leçons. <code>decompose</code> gagne sans sacrifier l'abstention. Et <code>cited</code>
+illustre un <strong>piège de métrique</strong> : son exact match tombe à 0 parce que les
+marqueurs <code>[2]</code> polluent le texte, alors que <code>contains</code> monte. Lire une
+seule métrique aurait fait conclure l'inverse.</p>
+<div class="callout"><strong>Le système s'abstient beaucoup — pourquoi ?</strong>
+73 % de fausses abstentions : le générateur n'est pas trop prudent, il n'a réellement pas
+de quoi répondre. Quand il répond, il a raison 62 % du temps. Le goulet est en amont, dans
+la recherche : c'est ce que le diagnostic du chapitre 10 confirme.</div>
+</section>
+
+<!-- ================================================================ -->
+<section id="juges">
+<h2><span class="num">8</span>Les juges LLM</h2>
+<p>Certaines questions n'ont pas de réponse de référence à laquelle comparer : « cette
+réponse est-elle <em>fidèle</em> aux passages ? », « chaque affirmation est-elle
+<em>soutenue</em> ? ». On fait alors noter par un second modèle : le <strong>juge</strong>.</p>
+<div class="tablewrap"><table>
+<thead><tr><th></th><th>Avec référence (<em>reference-based</em>)</th><th>Sans référence (<em>reference-free</em>)</th></tr></thead>
+<tbody>
+<tr><td>Principe</td><td>Comparer à une vérité terrain</td><td>Un juge note directement</td></tr>
+<tr><td>Coût</td><td>Élevé à constituer, nul à exécuter</td><td>Nul à constituer, cher à exécuter</td></tr>
+<tr><td>Fiabilité</td><td>Stable</td><td>Dérive, à calibrer</td></tr>
+<tr><td>Dans le banc</td><td><code>native.ir</code>, <code>native.answer</code>, <code>native.nuggets</code></td><td><code>native.claims</code>, Ragas, DeepEval</td></tr>
+</tbody></table></div>
+
+<h3>8.1 Décomposer en affirmations</h3>
+<p><code>native.claims</code> reprend l'idée de RAGChecker (Amazon, 2024) : découper la réponse
+en affirmations élémentaires, puis demander au juge si chacune est soutenue par les passages.
+On obtient une <strong>précision des affirmations</strong> (fidélité) et, en sens inverse
+sur la référence, un <strong>rappel</strong>. Surtout, on sait <em>attribuer</em> l'erreur :
+une affirmation fausse soutenue par un passage accuse la recherche ; une affirmation fausse
+non soutenue accuse le générateur.</p>
+
+<h3>8.2 Trois défauts structurels des juges</h3>
+<ol>
+  <li><strong>Non reproductible.</strong> Deux passes identiques de <code>llama3.2:3b</code>,
+  température 0 : fidélité <strong>1,000 puis 0,583</strong>. Fixer la graine réduit l'écart
+  (0,633 / 0,667) sans l'annuler.</li>
+  <li><strong>Biais d'auto-préférence.</strong> Un modèle qui juge ses propres réponses les
+  surnote. Règle du banc : juge ≠ générateur, sinon un avertissement est gravé dans le run.</li>
+  <li><strong>Capacité.</strong> Un modèle de 3 milliards de paramètres ne produit
+  <em>aucun</em> score exploitable pour certaines métriques de DeepEval : leurs schémas JSON
+  sont trop profonds pour lui.</li>
+</ol>
+
+<h3>8.3 Calibrer un juge : le κ de Cohen</h3>
+<p>Pour savoir si un juge est fiable, on le confronte à une référence sur les mêmes cas et on
+mesure l'<strong>accord corrigé du hasard</strong>. Deux juges qui répondent « oui » 90 % du
+temps s'accordent souvent par pur hasard ; le κ retire cette part :</p>
+<div class="formula">κ = <span class="frac"><span>p<sub>o</sub> − p<sub>e</sub></span><span>1 − p<sub>e</sub></span></span> &nbsp;&nbsp; p<sub>o</sub> : accord observé ; p<sub>e</sub> : accord attendu par hasard</div>
+<div class="card">
+<h4 style="margin-top:0">Démo — calculer un κ</h4>
+<p class="muted" style="margin-top:0">Tableau de contingence : verdicts du juge contre la référence.</p>
+<div class="tablewrap"><table style="max-width:440px">
+<thead><tr><th></th><th>Référence : oui</th><th>Référence : non</th></tr></thead>
+<tbody>
+<tr><th>Juge : oui</th><td><input id="kp-a" type="number" min="0" value="30"></td><td><input id="kp-b" type="number" min="0" value="10"></td></tr>
+<tr><th>Juge : non</th><td><input id="kp-c" type="number" min="0" value="5"></td><td><input id="kp-d" type="number" min="0" value="15"></td></tr>
+</tbody></table></div>
+<div class="kpis" id="kp-out"></div>
+<p class="muted">Essayez un juge qui dit toujours « oui » (c = d = 0) : l'accord observé reste élevé, mais κ tombe à 0.</p>
+</div>
+
+<h3>8.4 Ce que valent les juges locaux</h3>
+<p>Quatre juges locaux mesurés sur les <strong>mêmes</strong> 60 réponses, et un très grand
+modèle comme étalon (jugé sur 53 d'entre elles). Pour chaque juge, le meilleur κ obtenu sur
+les deux métriques d'affirmations. Le repère publié d'utilisabilité est κ = 0,6.</p>
+<div class="chart" id="chart-judges"></div>
+<p>Trois constats. <strong>Aucun juge local n'atteint le seuil.</strong> Un modèle
+<strong>plus récent ne juge pas mieux</strong> : les trois modèles de 2 à 4 mois font moins
+bien que <code>llama3.2:3b</code>, âgé d'un an. Et <strong>la tâche est jugeable</strong> : un
+très grand modèle atteint 0,958 sur les mêmes cas. Le plafond vient de la taille des
+modèles, pas de la difficulté.</p>
+<div class="callout"><strong>Pistes de l'état de l'art (2025–2026)</strong>
+Des <strong>vérificateurs spécialisés</strong> de 0,1 à 0,8 milliard de paramètres
+(HHEM-2.1, MiniCheck, LettuceDetect) approchent les juges de 8 milliards en fidélité et
+tournent sur CPU. Et plutôt que d'écarter un juge imparfait, on peut <strong>corriger son
+biais</strong> à partir d'une centaine de cas relus à la main (<em>prediction-powered
+inference</em>) : on obtient des intervalles de confiance honnêtes même avec un κ de 0,46.</div>
+</section>
+
+<!-- ================================================================ -->
+<section id="stats">
+<h2><span class="num">9</span>Trancher : la statistique</h2>
+<p>Une moyenne sur 177 questions est une <em>estimation</em>. Si l'on tirait 177 autres
+questions, on obtiendrait un autre chiffre. Avant de dire « B est meilleur que A », il faut
+savoir si l'écart dépasse cette fluctuation.</p>
+
+<h3>9.1 Le bootstrap : la précision d'une mesure</h3>
+<p>Idée : on ne peut pas retirer de nouvelles questions, mais on peut <strong>rééchantillonner
+avec remise</strong> celles qu'on a. On tire 177 questions parmi les 177 (certaines deux fois,
+d'autres jamais), on recalcule la moyenne, et on recommence 5 000 fois. La dispersion de ces
+moyennes mesure l'incertitude ; les percentiles 2,5 % et 97,5 % donnent l'intervalle de
+confiance à 95 %.</p>
+<p>Pourquoi pas un intervalle de Student ? Les scores sont bornés à [0, 1] et souvent binaires
+(0 ou 1) : un intervalle normal peut déborder de [0, 1] et est mal calibré sur petits
+échantillons. Le bootstrap ne suppose aucune loi.</p>
+<div class="card">
+<h4 style="margin-top:0">Démo — bootstrap sur des scores binaires</h4>
+<div class="controls">
+  <div><label for="bs-n">Nombre de questions : <span id="bs-n-v" class="out"></span></label><input id="bs-n" type="range" min="20" max="800" step="1" value="177"></div>
+  <div><label for="bs-p">Taux de réussite observé : <span id="bs-p-v" class="out"></span></label><input id="bs-p" type="range" min="0.05" max="0.95" step="0.01" value="0.57"></div>
+  <div style="align-self:end"><button class="primary" id="bs-run" type="button">Rééchantillonner 2 000 fois</button></div>
+</div>
+<div class="chart" id="chart-bootstrap"></div>
+<p class="out" id="bs-out"></p>
+<p class="muted">Divisez par 4 le nombre de questions : l'intervalle double. L'incertitude décroît en 1/√n — c'est pour cela que 200 questions ne départagent que des écarts de plusieurs points.</p>
+</div>
+
+<h3>9.2 Le test apparié : B est-il meilleur que A ?</h3>
+<p>Erreur classique : calculer l'intervalle de A, celui de B, et regarder s'ils se chevauchent.
+C'est perdre l'essentiel. Les deux configurations voient les <strong>mêmes</strong> questions,
+et la variance <em>entre questions</em> est énorme — certaines sont dures pour tout le monde.
+En travaillant sur l'<strong>écart par question</strong> <em>b<sub>i</sub> − a<sub>i</sub></em>,
+cette variance s'annule.</p>
+<ol>
+  <li>Calculer pour chaque question l'écart δ<sub>i</sub> = b<sub>i</sub> − a<sub>i</sub>.</li>
+  <li><strong>Intervalle</strong> : bootstrap sur la moyenne des δ<sub>i</sub>. Si l'intervalle exclut 0, l'écart est significatif.</li>
+  <li><strong>p-value</strong> : test de permutation. Sous l'hypothèse « A et B se valent », le
+  signe de chaque δ<sub>i</sub> est arbitraire ; on tire des signes au hasard 5 000 fois et on
+  compte la part des tirages au moins aussi extrêmes que l'écart observé.</li>
+</ol>
+<p>Le banc affiche <strong>« à la limite »</strong> quand l'intervalle et la p-value ne
+concordent pas : c'est précisément la zone où l'on tranche à tort avec assurance.</p>
+
+<h3>9.3 Les comparaisons multiples</h3>
+<p>Au seuil de 5 %, vingt comparaisons où rien ne change produisent en moyenne <strong>un
+faux positif</strong>. Tester 4 métriques × 2 valeurs de k, c'est 8 tests : l'un d'eux peut
+« gagner » par pur hasard. La <strong>correction de Holm</strong> ajuste les p-values :</p>
+<ol>
+  <li>Trier les <em>m</em> p-values : p<sub>(1)</sub> ≤ … ≤ p<sub>(m)</sub>.</li>
+  <li>Multiplier p<sub>(i)</sub> par (m − i + 1), plafonner à 1.</li>
+  <li>Imposer la monotonie : chaque valeur ajustée est au moins égale à la précédente.</li>
+</ol>
+<div class="card">
+<h4 style="margin-top:0">Démo — correction de Holm</h4>
+<label for="holm-in">p-values brutes, séparées par des virgules</label>
+<input id="holm-in" type="text" value="0.0130, 0.1340, 0.0008, 0.0004">
+<div class="tablewrap" id="holm-out"></div>
+<p class="muted">Ce sont les p-values réelles du chapitre 10 (hybride contre hybride + reranker). Toutes les conclusions « moins bon » y survivent à la correction.</p>
+</div>
+
+<h3>9.4 Combien de questions faut-il ?</h3>
+<p>Le banc fournit une estimation volontairement prudente (<code>stats.required_n</code>),
+pour une métrique binaire autour de 50 %, seuil 5 %, puissance 80 % :</p>
+<div class="formula">n ≈ 2 · p(1 − p) · <span class="frac"><span>(z<sub>α/2</sub> + z<sub>β</sub>)²</span><span>δ²</span></span> &nbsp;&nbsp; avec z<sub>α/2</sub> = 1,96 et z<sub>β</sub> = 0,84</div>
+<p>Soit ~390 questions pour détecter un écart δ de 10 points, ~1 090 pour 6 points, ~1 570
+pour 5 points. C'est une borne haute : elle ignore le bénéfice de l'appariement, qui est
+d'autant plus fort que deux configurations se trompent sur les mêmes questions. En
+pratique, sur ce banc, 200 questions appariées ont suffi à trancher des écarts de 6 points
+et plus. En dessous, il faut puiser dans le <em>pool</em> de réserve. Un résultat « non
+concluant » n'est pas un échec : c'est la bonne réponse quand les données ne permettent pas
+de trancher.</p>
+</section>
+
+<!-- ================================================================ -->
+<section id="tp">
+<h2><span class="num">10</span>TP : le diagnostic du 28/09</h2>
+<p>On applique tout ce qui précède sur le banc réel. Question de départ, posée par la
+méthodologie : <em>le système est-il limité par la <strong>qualité</strong> de la recherche,
+ou simplement par le <strong>nombre</strong> de passages donnés au générateur ?</em></p>
+
+<h3>10.1 La courbe de couverture</h3>
+<pre><code>uv run ragbench diagnose recall-curve configs/baseline.yml \
+  --dataset multihop-rag --ks 5,10,20,30,50 --json data/cache/courbe.json</code></pre>
+<p>Le principe : pour chaque question, remonter une seule fois les 50 meilleurs passages, puis
+lire chaque préfixe de longueur <em>k</em>. Aucune génération : quelques minutes au lieu d'une
+campagne d'une heure.</p>
+<div class="chart" id="chart-curve"></div>
+<div id="curve-table-wrap"></div>
+<h4>Lecture</h4>
+<ul>
+  <li><strong>Les bons articles existent, mais arrivent trop bas.</strong> 57 % des articles de
+  référence sont dans les 5 premiers passages, 96 % dans les 50 premiers. Le problème est un
+  problème de <em>classement</em> : un meilleur ordre, ou plus de passages, en récupérerait
+  l'essentiel.</li>
+  <li><strong>Les faits plafonnent à 63 %</strong> même quand les bons articles sont là. Deux
+  suspects, à tester séparément : le plafond de 2 passages par article (si le fait est dans le
+  3<sup>e</sup> paragraphe, il n'arrive jamais) et le critère lexical à 60 %, qui rate les
+  reformulations.</li>
+  <li><strong>Tous les faits</strong> ne sont réunis que pour 11 % des questions à k = 5. Une
+  réponse multi-hop correcte est impossible dans les 89 % restants, quel que soit le prompt.</li>
+</ul>
+
+<h3>10.2 Le reranker aide-t-il ?</h3>
+<p>Puisque les bons articles sont dans le vivier mais mal classés, un reranker devrait aider.
+On le vérifie par un test apparié sur la recherche seule, corrigé par Holm :</p>
+<pre><code>uv run ragbench diagnose compare \
+  configs/experiments/rerank.yml:hybrid-k5 \
+  configs/experiments/rerank.yml:hybrid-k5-ce-minilm --dataset multihop-rag</code></pre>
+<div class="chart" id="chart-rerank"></div>
+<div id="rerank-table-wrap"></div>
+<p><strong>Verdict : le cross-encoder MiniLM est rejeté.</strong> Il n'apporte rien au dense
+(non concluant), et il <strong>dégrade nettement l'hybride</strong> : −0,063 d'articles
+retrouvés et −0,107 de couverture complète à k = 5, conclusions qui survivent à Holm. Il
+coûte en plus ~2 s de CPU par question.</p>
+<p>C'est contre-intuitif, et c'est pourtant ce que l'état de l'art laissait attendre : un
+reranker entraîné sur les passages courts de MS MARCO peut faire <em>moins bien</em> qu'un
+premier étage fort. Hypothèse (non vérifiée) : il ignore les contraintes de source et de date
+portées par l'en-tête, essentielles sur ce corpus. Moralité : <strong>on ne suppose pas qu'une
+technique aide, on le mesure</strong> — sur son corpus.</p>
+
+<h3>10.3 Une leçon de reproductibilité</h3>
+<p>Même configuration (hash <code>bb2b20210128</code>), même échantillon, mêmes évaluateurs —
+mais une autre machine et une version plus récente du code :</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Métrique</th><th class="num">Documenté (poste GPU, juillet)</th><th class="num">Mesuré (poste CPU, 28/09)</th></tr></thead>
+<tbody>
+<tr><td>recall@3</td><td class="num">0,351</td><td class="num">0,525</td></tr>
+<tr><td>hit_rate@3</td><td class="num">0,644</td><td class="num">0,842</td></tr>
+<tr><td>MRR</td><td class="num">0,545</td><td class="num">0,705</td></tr>
+<tr><td>nugget_recall</td><td class="num">0,244</td><td class="num">0,368</td></tr>
+<tr><td>nugget_full_coverage</td><td class="num">0,040</td><td class="num">0,113</td></tr>
+</tbody></table></div>
+<p>L'écart est trop grand pour du bruit numérique. Il vient du code ou du serveur d'inférence,
+sans qu'on puisse encore dire lequel. Conclusion opérationnelle : <strong>une comparaison
+n'est valable qu'entre runs produits dans les mêmes conditions</strong>. C'est pour cela que
+chaque run enregistre le hash de configuration <em>et</em> le commit git.</p>
+</section>
+
+<!-- ================================================================ -->
+<section id="methode">
+<h2><span class="num">11</span>La méthode d'ablation</h2>
+<p>Le banc sert à répondre, technique par technique : <em>qu'est-ce que ça rapporte, qu'est-ce
+que ça coûte, et sur quels documents ?</em> La démarche :</p>
+<ol class="steps">
+  <li><strong>Une baseline banale et stable</strong> — dense, 5 passages, prompt neutre. Elle
+  n'a pas à être bonne ; elle doit être reproductible et sans astuce injustifiable.</li>
+  <li><strong>Chaque technique seule contre la baseline</strong> — un seul paramètre change,
+  le reste est identique. C'est ce qui permet d'attribuer l'écart.</li>
+  <li><strong>Seulement les gagnantes, combinées</strong> — tester toutes les combinaisons
+  exploserait le nombre de campagnes (et de faux positifs).</li>
+  <li><strong>Gain et coût, toujours ensemble</strong> — latence, tokens, temps d'indexation.
+  Deux points de gain pour cinq fois le coût n'est pas un gain.</li>
+</ol>
+<p>Une matrice d'expérience déclare une base et des variantes, fusionnées en profondeur :</p>
+<pre><code>base:
+  retrieval: {mode: dense, top_k: 5, fetch_k: 20, max_per_document: 2}
+variants:
+  - name: dense-k5                       # référence
+  - name: dense-k5-ce-minilm
+    retrieval:
+      rerank: cross_encoder
+      rerank_model: flashrank:ms-marco-MiniLM-L-12-v2
+      fetch_k: 50</code></pre>
+
+<h3>Ce qui a été mesuré, et la suite</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Technique</th><th>Verdict sur MultiHop-RAG</th></tr></thead>
+<tbody>
+<tr><td>Recherche hybride (RRF)</td><td><span class="pill hit">gagne</span> +0,098 de recall@3</td></tr>
+<tr><td>En-tête contextuel</td><td><span class="pill hit">gagne</span> +0,102 de justesse</td></tr>
+<tr><td>Prompt <code>decompose</code></td><td><span class="pill hit">gagne</span> +0,096 de justesse</td></tr>
+<tr><td>Reranking par LLM</td><td><span class="pill">nul</span> −0,001, pour 5× le coût</td></tr>
+<tr><td>Cross-encoder MiniLM</td><td><span class="pill miss">perd</span> −0,063 sur l'hybride</td></tr>
+<tr><td>Décomposition de la requête</td><td class="muted">à mesurer — meilleur gain publié sur ce corpus</td></tr>
+<tr><td>Reranker récent (Qwen3-Reranker-0.6B)</td><td class="muted">à mesurer</td></tr>
+<tr><td>Filtrage par métadonnées</td><td class="muted">à mesurer — clé contre les documents proches</td></tr>
+<tr><td>Graphe de connaissance (HippoRAG 2)</td><td class="muted">à mesurer — coûteux à indexer sur CPU</td></tr>
+</tbody></table></div>
+</section>
+
+<!-- ================================================================ -->
+<section id="apercu">
+<h2><span class="num">12</span>Et sur vos propres documents ?</h2>
+<p>Tout ce qui précède repose sur une vérité terrain fournie. Sur vos documents, elle
+n'existe pas : ni questions, ni réponses, ni passages de référence. Le banc prévoit un
+<strong>mode aperçu</strong> pour obtenir une <em>tendance</em> rapidement — en assumant ses
+limites.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Source de questions</th><th>Avantage</th><th>Piège</th></tr></thead>
+<tbody>
+<tr><td>Vraies questions d'utilisateurs</td><td>Représentatives</td><td>Rares ; il faut retrouver les passages de référence</td></tr>
+<tr><td>Générées par un LLM</td><td>Automatiques, en volume</td><td>Biaisées : elles reprennent les mots du passage et sont trop faciles</td></tr>
+<tr><td>Annotation humaine</td><td>Fiable</td><td>Coûteuse</td></tr>
+</tbody></table></div>
+<p>Le biais des questions générées est mesuré : 15,7 mots en moyenne contre 6,8 pour de vraies
+requêtes, et la configuration « gagnante » sur questions synthétiques recule sur les vraies.
+Parades prévues : fixer une distribution de styles, rejeter les questions qui recopient leur
+passage, générer des <strong>questions pièges entre documents voisins</strong> (comme
+Sporting News / Bedard), ajouter des questions sans réponse, et faire relire un échantillon.</p>
+<div class="callout"><strong>Bench et aperçu</strong>
+Le bench sur corpus de référence <em>tranche</em>. L'aperçu sur vos documents
+<em>oriente</em> : il désigne les techniques qui méritent d'être confirmées, il ne les déclare
+pas gagnantes.</div>
+</section>
+
+<!-- ================================================================ -->
+<section id="exercices">
+<h2><span class="num">13</span>Exercices</h2>
+
+<h4>Exercice 1 — métriques à la main</h4>
+<p>Une question a 3 articles de référence {A, B, C}. Le système remonte, dans l'ordre :
+D, A, E, C, F. Calculez recall@5, precision@5, hit_rate@5, MRR et nDCG@5.</p>
+<details><summary>Solution</summary>
+<p>R ∩ G = {A, C}. recall@5 = 2/3 = 0,667 ; precision@5 = 2/5 = 0,4 ; hit_rate = 1 ;
+MRR = 1/2 (premier bon au rang 2). DCG = 1/log<sub>2</sub>3 + 1/log<sub>2</sub>5 = 0,631 +
+0,431 = 1,062. IDCG (3 pertinents en tête) = 1 + 0,631 + 0,5 = 2,131. nDCG@5 = 0,498.
+Vérifiez avec le calculateur du chapitre 6.</p></details>
+
+<h4>Exercice 2 — le juge complaisant</h4>
+<p>Sur 60 réponses, la référence en déclare 40 fidèles et 20 non fidèles. Un juge déclare
+<em>toutes</em> les réponses fidèles. Quel est son accord observé ? Son κ ? Que conclure ?</p>
+<details><summary>Solution</summary>
+<p>Accord observé = 40/60 = 0,667. Le juge dit toujours oui : p<sub>e</sub> = (60/60)·(40/60)
++ 0·(20/60) = 0,667. κ = (0,667 − 0,667)/(1 − 0,667) = 0. Deux tiers d'accord, et pourtant
+aucune information : c'est exactement le profil de <code>nemotron-3-nano:4b</code> (κ = 0).</p></details>
+
+<h4>Exercice 3 — lire une comparaison</h4>
+<p><code>diagnose compare</code> affiche pour le dense : écart −0,015, IC95 [−0,057 ; +0,027],
+p = 0,51. Un collègue conclut « le reranker dégrade légèrement le dense ». A-t-il raison ?</p>
+<details><summary>Solution</summary>
+<p>Non. L'intervalle contient 0 : les données sont compatibles avec une dégradation de
+5,7 points comme avec un gain de 2,7 points. La seule conclusion honnête est « non
+concluant sur 177 questions ». Pour trancher, il faudrait plus de questions (le <em>pool</em>).</p></details>
+
+<h4>Exercice 4 — concevoir une ablation</h4>
+<p>On soupçonne que le plafond de 2 passages par article explique que les faits plafonnent à
+63 %. Proposez une expérience qui isole ce facteur, la commande à lancer, et le résultat qui
+confirmerait l'hypothèse.</p>
+<details><summary>Solution</summary>
+<p>Deux variantes identiques sauf <code>max_per_document</code> (2 contre 4, par exemple), même
+index, même vivier. Comparer <code>nugget_recall</code> et <code>nugget_full_coverage</code> à
+k = 5, 10, 20 avec <code>ragbench diagnose compare A.yml B.yml</code>. Hypothèse confirmée si
+la couverture des faits monte significativement (après Holm) sans que le recall d'articles
+chute — sinon, le coupable est plutôt le critère lexical.</p></details>
+
+<h4>Exercice 5 — piège de métrique</h4>
+<p>Le prompt <code>cited</code> fait monter <code>contains</code> mais tomber l'exact match à 0.
+Expliquez, et proposez une correction qui ne change pas le prompt.</p>
+<details><summary>Solution</summary>
+<p>Les marqueurs de citation <code>[2]</code> restent dans la réponse ; l'exact match exige une
+égalité stricte, donc échoue toujours. Correction côté mesure : retirer les marqueurs
+<code>\[\d+\]</code> lors de la normalisation avant l'exact match. C'est un changement de la
+<em>règle</em> : il doit s'appliquer à toutes les configurations, sinon les comparaisons
+deviennent invalides.</p></details>
+
+<h4>Exercice 6 — TP guidé</h4>
+<ol>
+  <li>Lancez la courbe de couverture sur <code>configs/experiments/rerank.yml:hybrid-k5</code> et comparez-la à celle de la baseline.</li>
+  <li>Écrivez une variante <code>max_per_document: 4</code> et testez l'hypothèse de l'exercice 4.</li>
+  <li>Rédigez un verdict de trois lignes : gain, intervalle, coût.</li>
+</ol>
+</section>
+
+<!-- ================================================================ -->
+<section id="glossaire">
+<h2><span class="num">14</span>Glossaire</h2>
+<div class="tablewrap"><table>
+<tbody>
+<tr><th>Abstention</th><td>Le système répond « je ne sais pas » (<code>INSUFFICIENT_CONTEXT</code>).</td></tr>
+<tr><th>Apparié (test)</th><td>Comparaison question par question entre deux configurations évaluées sur les mêmes questions.</td></tr>
+<tr><th>Bootstrap</th><td>Rééchantillonnage avec remise pour estimer l'incertitude d'une mesure sans supposer de loi.</td></tr>
+<tr><th>Chunk / passage</th><td>Morceau de document indexé et remonté par la recherche.</td></tr>
+<tr><th>Cross-encoder</th><td>Modèle qui lit la paire (question, passage) ensemble et en note la pertinence. Plus fin et plus lent qu'un cosinus.</td></tr>
+<tr><th>Embedding</th><td>Vecteur qui représente le sens d'un texte ; deux textes proches ont des vecteurs proches.</td></tr>
+<tr><th>fetch_k / top_k</th><td>Taille du vivier de candidats / nombre de passages finalement donnés au générateur.</td></tr>
+<tr><th>Hash de configuration</th><td>Empreinte du fichier de configuration ; identité d'un run.</td></tr>
+<tr><th>Holm</th><td>Correction des p-values quand plusieurs tests servent une même décision.</td></tr>
+<tr><th>Juge LLM</th><td>Modèle qui note une réponse quand il n'y a pas de référence exacte.</td></tr>
+<tr><th>κ de Cohen</th><td>Accord entre deux évaluateurs, corrigé de l'accord dû au hasard. 0 = hasard, 1 = parfait.</td></tr>
+<tr><th>Multi-hop</th><td>Question dont la réponse exige de combiner plusieurs documents.</td></tr>
+<tr><th>Nugget</th><td>Fait atomique de la vérité terrain, dont on vérifie la présence.</td></tr>
+<tr><th>p-value</th><td>Probabilité d'observer un écart au moins aussi grand si les deux configurations se valaient.</td></tr>
+<tr><th>RRF</th><td>Reciprocal Rank Fusion : fusion de classements par la somme des 1/(k + rang).</td></tr>
+<tr><th>Vérité terrain</th><td>Réponses et documents de référence, connus à l'avance, auxquels on compare.</td></tr>
+</tbody></table></div>
+<p class="muted">Pour aller plus loin, dans le dépôt : <code>docs/METHODOLOGIE.md</code> (ce que
+le banc mesure), <code>docs/JUGES.md</code> (les juges en détail), <code>docs/CADRAGE.md</code>
+(objectifs et roadmap), <code>docs/ETAT-DE-L-ART.md</code> (veille 2025–2026).</p>
+</section>
+
+</div>
+</main>
+</div>
+
+<div class="tooltip" id="tooltip" role="status" aria-live="polite"></div>
+
+<script>
+/* ------------------------------------------------------------------ */
+/* Données mesurées (ragbench, 28/09/2026, 177 questions répondables)  */
+/* ------------------------------------------------------------------ */
+const CURVE = {
+  ks: [5, 10, 20, 30, 50],
+  series: [
+    { key: "doc_recall", label: "Articles de référence", color: "--s1",
+      mean: [0.567, 0.710, 0.871, 0.931, 0.956], lo: [0.520, 0.669, 0.840, 0.906, 0.935], hi: [0.615, 0.752, 0.901, 0.955, 0.976] },
+    { key: "nugget_recall", label: "Faits couverts", color: "--s2",
+      mean: [0.368, 0.455, 0.553, 0.612, 0.630], lo: [0.321, 0.406, 0.507, 0.565, 0.583], hi: [0.415, 0.503, 0.599, 0.658, 0.675] },
+    { key: "nugget_full_coverage", label: "Tous les faits", color: "--s3",
+      mean: [0.113, 0.181, 0.237, 0.294, 0.322], lo: [0.068, 0.124, 0.175, 0.226, 0.254], hi: [0.164, 0.237, 0.299, 0.362, 0.390] },
+  ],
+};
+const RERANK = [
+  { stage: "Dense", metric: "Articles @5", a: 0.567, b: 0.552, d: -0.015, lo: -0.057, hi: 0.027, p: 0.5125, holm: 1.0, verdict: "non concluant" },
+  { stage: "Dense", metric: "Tous les faits @5", a: 0.113, b: 0.079, d: -0.034, lo: -0.085, hi: 0.017, p: 0.3099, holm: 1.0, verdict: "non concluant" },
+  { stage: "Hybride", metric: "Articles @5", a: 0.619, b: 0.556, d: -0.063, lo: -0.111, hi: -0.016, p: 0.0130, holm: 0.0260, verdict: "moins bon" },
+  { stage: "Hybride", metric: "Tous les faits @5", a: 0.164, b: 0.056, d: -0.107, lo: -0.164, hi: -0.051, p: 0.0008, holm: 0.0024, verdict: "moins bon" },
+];
+const JUDGES = [
+  { name: "llama3.2:3b (1 an)", k: 0.458 },
+  { name: "granite4.1:3b (2 mois)", k: 0.191 },
+  { name: "nemotron-3-nano:4b (4 mois)", k: 0.000 },
+  { name: "qwen3.5:4b (4 mois)", k: null, note: "aucun jugement exploitable" },
+  { name: "Très grand modèle (étalon)", k: 0.958 },
+];
+
+/* ------------------------------------------------------------------ */
+/* Utilitaires                                                          */
+/* ------------------------------------------------------------------ */
+const $ = (s) => document.querySelector(s);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const fmt = (x, d = 3) => (x === null || x === undefined || Number.isNaN(x)) ? "—" : x.toFixed(d).replace(".", ",");
+const sgn = (x, d = 3) => (x > 0 ? "+" : x < 0 ? "−" : "") + fmt(Math.abs(x), d);
+const SVGNS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs = {}, parent) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function svgText(parent, x, y, txt, attrs = {}) {
+  const t = svgEl("text", { x, y, "font-size": 12, fill: css("--muted"), ...attrs }, parent);
+  t.textContent = txt;
+  return t;
+}
+function el(tag, attrs = {}, text) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+const tooltip = $("#tooltip");
+function showTip(container, x, y, title, rows) {
+  tooltip.replaceChildren();
+  tooltip.appendChild(el("div", { class: "t" }, title));
+  for (const r of rows) {
+    const row = el("div", { class: "row" });
+    if (r.color) { const lk = el("span", { class: "lk" }); lk.style.background = r.color; row.appendChild(lk); }
+    row.appendChild(el("b", {}, r.value));
+    row.appendChild(el("span", { class: "n" }, r.label));
+    tooltip.appendChild(row);
+  }
+  const box = container.getBoundingClientRect();
+  const left = Math.min(window.scrollX + box.left + x + 14, window.scrollX + document.documentElement.clientWidth - 240);
+  tooltip.style.left = left + "px";
+  tooltip.style.top = (window.scrollY + box.top + y - 10) + "px";
+  tooltip.style.opacity = 1;
+}
+const hideTip = () => { tooltip.style.opacity = 0; };
+// Largeur réelle du conteneur : on dessine à l'échelle 1, sans réduire le texte.
+const widthOf = (host) => Math.max(320, Math.round(host.getBoundingClientRect().width || 720));
+
+function tableFrom(headers, rows, numericCols = []) {
+  const wrap = el("div", { class: "tablewrap" });
+  const t = el("table");
+  const thead = el("thead"); const tr = el("tr");
+  headers.forEach((h, i) => tr.appendChild(el("th", numericCols.includes(i) ? { class: "num" } : {}, h)));
+  thead.appendChild(tr); t.appendChild(thead);
+  const tb = el("tbody");
+  for (const r of rows) {
+    const row = el("tr");
+    r.forEach((c, i) => row.appendChild(el("td", numericCols.includes(i) ? { class: "num" } : {}, c)));
+    tb.appendChild(row);
+  }
+  t.appendChild(tb); wrap.appendChild(t);
+  return wrap;
+}
+function tableToggle(wrapSel, build) {
+  const wrap = $(wrapSel);
+  const btn = el("button", { class: "toggle-table", type: "button", "aria-expanded": "false" }, "Voir les données en tableau");
+  const holder = el("div"); holder.hidden = true;
+  btn.addEventListener("click", () => {
+    holder.hidden = !holder.hidden;
+    btn.setAttribute("aria-expanded", String(!holder.hidden));
+    btn.textContent = holder.hidden ? "Voir les données en tableau" : "Masquer le tableau";
+    if (!holder.hidden && !holder.firstChild) holder.appendChild(build());
+  });
+  wrap.replaceChildren(btn, holder);
+}
+
+/* ------------------------------------------------------------------ */
+/* Schéma du pipeline                                                   */
+/* ------------------------------------------------------------------ */
+function drawPipeline() {
+  const svg = $("#pipeline-svg"); svg.replaceChildren();
+  const ink = css("--ink"), ink2 = css("--ink-2"), line = css("--axis"), surf = css("--surface-2"), acc = css("--accent");
+  const box = (x, y, w, label, sub, hl) => {
+    svgEl("rect", { x, y, width: w, height: 52, rx: 8, fill: hl ? css("--accent-soft") : surf, stroke: hl ? acc : line }, svg);
+    svgText(svg, x + w / 2, y + 22, label, { "text-anchor": "middle", fill: ink, "font-size": 13, "font-weight": 600 });
+    if (sub) svgText(svg, x + w / 2, y + 40, sub, { "text-anchor": "middle", fill: ink2, "font-size": 11 });
+  };
+  const arrow = (x1, y1, x2, y2) => {
+    svgEl("line", { x1, y1, x2, y2, stroke: line, "stroke-width": 1.5 }, svg);
+    const a = Math.atan2(y2 - y1, x2 - x1), s = 6;
+    svgEl("path", { d: `M${x2},${y2} L${x2 - s * Math.cos(a - 0.45)},${y2 - s * Math.sin(a - 0.45)} L${x2 - s * Math.cos(a + 0.45)},${y2 - s * Math.sin(a + 0.45)} Z`, fill: line }, svg);
+  };
+  svgText(svg, 8, 18, "HORS LIGNE — une fois", { fill: ink2, "font-size": 11, "font-weight": 600 });
+  box(8, 28, 120, "Documents", "609 articles");
+  box(160, 28, 130, "Découpage", "chunks + en-tête");
+  box(322, 28, 130, "Embedding", "nomic-embed-text");
+  box(484, 28, 130, "Index", "pgvector");
+  arrow(128, 54, 158, 54); arrow(290, 54, 320, 54); arrow(452, 54, 482, 54);
+  svgText(svg, 8, 128, "EN LIGNE — à chaque question", { fill: ink2, "font-size": 11, "font-weight": 600 });
+  box(8, 138, 120, "Question", "search_query:");
+  box(160, 138, 130, "Recherche", "dense · lexical · RRF", true);
+  box(322, 138, 130, "Reranking", "optionnel", true);
+  box(484, 138, 130, "Prompt", "top_k passages");
+  box(628, 138, 124, "Générateur", "réponse / abstention");
+  arrow(128, 164, 158, 164); arrow(290, 164, 320, 164); arrow(452, 164, 482, 164); arrow(614, 164, 626, 164);
+  arrow(549, 80, 549, 104); svgEl("line", { x1: 549, y1: 104, x2: 225, y2: 104, stroke: line, "stroke-width": 1.5 }, svg); arrow(225, 104, 225, 136);
+  svgText(svg, 8, 232, "ÉVALUATION — trois étages mesurés séparément", { fill: ink2, "font-size": 11, "font-weight": 600 });
+  const tag = (x, w, t) => { svgEl("rect", { x, y: 242, width: w, height: 34, rx: 6, fill: "none", stroke: acc, "stroke-dasharray": "0" }, svg); svgText(svg, x + w / 2, 263, t, { "text-anchor": "middle", fill: ink, "font-size": 12 }); };
+  tag(160, 292, "① Recherche : recall@k, MRR, nDCG, nuggets");
+  tag(484, 130, "② Fidélité : juges");
+  tag(628, 124, "③ Réponse : em, F1");
+}
+
+/* ------------------------------------------------------------------ */
+/* Démo découpage — portage de rag/chunking.py                          */
+/* ------------------------------------------------------------------ */
+const SEPS = ["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " ", ""];
+function ckFixed(text, size, overlap) {
+  const step = Math.max(1, size - overlap), out = [];
+  for (let i = 0; i < text.length; i += step) { const c = text.slice(i, i + size); if (c.trim()) out.push(c); }
+  return out.map((c) => ({ text: c, ov: 0 }));
+}
+function ckRecursiveRaw(text, size, depth = 0) {
+  if (text.length <= size) return text.trim() ? [text] : [];
+  let sep = "";
+  for (const s of SEPS.slice(depth)) { if (s === "" || text.includes(s)) { sep = s; break; } }
+  if (sep === "") { const out = []; for (let i = 0; i < text.length; i += size) { const c = text.slice(i, i + size); if (c.trim()) out.push(c); } return out; }
+  const parts = text.split(sep), chunks = []; let buf = "";
+  for (const part of parts) {
+    const cand = buf ? buf + sep + part : part;
+    if (cand.length <= size) { buf = cand; continue; }
+    if (buf) chunks.push(buf);
+    if (part.length > size) { chunks.push(...ckRecursiveRaw(part, size, SEPS.indexOf(sep) + 1)); buf = ""; }
+    else buf = part;
+  }
+  if (buf.trim()) chunks.push(buf);
+  return chunks.filter((c) => c.trim());
+}
+function ckSentenceRaw(text, size) {
+  const sents = text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean), out = []; let buf = "";
+  for (const s of sents) { const cand = (buf + " " + s).trim(); if (cand.length <= size || !buf) buf = cand; else { out.push(buf); buf = s; } }
+  if (buf) out.push(buf);
+  return out;
+}
+function applyOverlap(chunks, overlap) {
+  if (overlap <= 0 || chunks.length < 2) return chunks.map((c) => ({ text: c, ov: 0 }));
+  const out = [{ text: chunks[0], ov: 0 }];
+  for (let i = 1; i < chunks.length; i++) {
+    const tail = chunks[i - 1].slice(-overlap);
+    out.push(tail.trim() ? { text: tail + chunks[i], ov: tail.length } : { text: chunks[i], ov: 0 });
+  }
+  return out;
+}
+function renderChunks() {
+  const strat = $("#ck-strategy").value, size = +$("#ck-size").value, overlap = +$("#ck-overlap").value;
+  $("#ck-size-v").textContent = size; $("#ck-overlap-v").textContent = overlap;
+  const text = $("#ck-text").value.trim();
+  let chunks;
+  if (strat === "fixed") chunks = ckFixed(text, size, overlap);
+  else if (strat === "sentence") chunks = applyOverlap(ckSentenceRaw(text, size), overlap);
+  else chunks = applyOverlap(ckRecursiveRaw(text, size), overlap);
+  const out = $("#ck-out"); out.replaceChildren();
+  chunks.forEach((c, i) => {
+    const d = el("span", { class: "chunk" });
+    d.appendChild(el("span", { class: "tag" }, `#${i + 1} · ${c.text.length} car.`));
+    if (c.ov) { d.appendChild(el("mark", {}, c.text.slice(0, c.ov))); d.appendChild(document.createTextNode(c.text.slice(c.ov))); }
+    else d.appendChild(document.createTextNode(c.text));
+    out.appendChild(d);
+  });
+  const avg = chunks.length ? Math.round(chunks.reduce((s, c) => s + c.text.length, 0) / chunks.length) : 0;
+  $("#ck-summary").textContent = `${chunks.length} passages, ${avg} caractères en moyenne, ${text.length} caractères au départ.`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Démo RRF                                                             */
+/* ------------------------------------------------------------------ */
+function renderRRF() {
+  const k = +$("#rrf-k").value; $("#rrf-k-v").textContent = k;
+  const parse = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
+  const dense = parse($("#rrf-dense").value), lex = parse($("#rrf-lex").value);
+  const docs = [...new Set([...dense, ...lex])];
+  const rows = docs.map((d) => {
+    const rd = dense.indexOf(d) + 1, rl = lex.indexOf(d) + 1;
+    const sd = rd ? 1 / (k + rd) : 0, sl = rl ? 1 / (k + rl) : 0;
+    return { d, rd, rl, sd, sl, s: sd + sl };
+  }).sort((a, b) => b.s - a.s);
+  $("#rrf-out").replaceChildren(tableFrom(
+    ["Rang fusionné", "Doc", "Rang dense", "1/(k+rang)", "Rang lexical", "1/(k+rang)", "Score RRF"],
+    rows.map((r, i) => [String(i + 1), r.d, r.rd || "—", r.rd ? fmt(r.sd, 4) : "0", r.rl || "—", r.rl ? fmt(r.sl, 4) : "0", fmt(r.s, 4)]),
+    [0, 2, 3, 4, 5, 6]
+  ));
+}
+
+/* ------------------------------------------------------------------ */
+/* Démo métriques IR                                                    */
+/* ------------------------------------------------------------------ */
+function buildIR() {
+  const host = $("#ir-ranks");
+  const init = [true, false, false, false, false];
+  for (let i = 0; i < 5; i++) {
+    const w = el("label"); const cb = el("input", { type: "checkbox", id: `ir-r${i}` }); cb.checked = init[i];
+    cb.addEventListener("change", renderIR);
+    w.appendChild(cb); w.appendChild(document.createTextNode(` rang ${i + 1} pertinent`));
+    host.appendChild(w);
+  }
+  $("#ir-gold").addEventListener("input", renderIR);
+  renderIR();
+}
+function renderIR() {
+  const rel = [0, 1, 2, 3, 4].map((i) => $(`#ir-r${i}`).checked ? 1 : 0);
+  const G = Math.max(1, +$("#ir-gold").value || 1), k = 5;
+  const found = rel.reduce((a, b) => a + b, 0);
+  const first = rel.indexOf(1);
+  const dcg = rel.reduce((s, r, i) => s + r / Math.log2(i + 2), 0);
+  let idcg = 0; for (let i = 0; i < Math.min(G, k); i++) idcg += 1 / Math.log2(i + 2);
+  const kp = [
+    ["recall@5", Math.min(1, found / G)], ["precision@5", found / k], ["hit_rate@5", found ? 1 : 0],
+    ["MRR", first >= 0 ? 1 / (first + 1) : 0], ["nDCG@5", idcg ? Math.min(1, dcg / idcg) : 0],
+  ];
+  const out = $("#ir-out"); out.replaceChildren();
+  for (const [l, v] of kp) { const d = el("div", { class: "kpi" }); d.appendChild(el("div", { class: "v" }, fmt(v))); d.appendChild(el("div", { class: "l" }, l)); out.appendChild(d); }
+  if (found > G) out.appendChild(el("div", { class: "kpi" }, "Plus de pertinents cochés que |G| : incohérent."));
+}
+
+/* ------------------------------------------------------------------ */
+/* Démo nuggets — portage de lexical_support                            */
+/* ------------------------------------------------------------------ */
+const STOP = new Set("the a an and or but of to in on at for with by from as is are was were be been that this it its his her their has have had will".split(" "));
+const toks = (t) => new Set((t.toLowerCase().match(/[a-z0-9]+/g) || []).filter((w) => !STOP.has(w) && w.length > 2));
+function renderNugget() {
+  const th = +$("#ng-th").value; $("#ng-th-v").textContent = fmt(th, 2);
+  const f = toks($("#ng-fact").value), p = toks($("#ng-passage").value);
+  const common = [...f].filter((w) => p.has(w)), missing = [...f].filter((w) => !p.has(w));
+  const ratio = f.size ? common.length / f.size : 0;
+  const ok = ratio >= th;
+  const out = $("#ng-out"); out.replaceChildren();
+  out.appendChild(el("strong", {}, ok ? "Couvert" : "Non couvert"));
+  out.appendChild(document.createTextNode(` — ${common.length} mots pleins sur ${f.size} retrouvés (${fmt(ratio * 100, 0)} %, seuil ${fmt(th * 100, 0)} %). Retrouvés : ${common.join(", ") || "—"}. Manquants : ${missing.join(", ") || "—"}.`));
+}
+
+/* ------------------------------------------------------------------ */
+/* Démo em / contains / F1 — portage de native_answer                   */
+/* ------------------------------------------------------------------ */
+function normalize(t) {
+  return (t || "").toLowerCase().replace(/[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/g, "").replace(/\b(a|an|the)\b/g, " ").split(/\s+/).filter(Boolean).join(" ");
+}
+function renderAnswer() {
+  const p = normalize($("#ans-pred").value), g = normalize($("#ans-gold").value);
+  const em = p === g ? 1 : 0;
+  let contains = 0;
+  if (g === "yes" || g === "no") contains = p.split(" ")[0] === g ? 1 : 0; else contains = g && p.includes(g) ? 1 : 0;
+  const pt = p.split(" ").filter(Boolean), gt = g.split(" ").filter(Boolean);
+  const cnt = {}; gt.forEach((w) => cnt[w] = (cnt[w] || 0) + 1);
+  let ov = 0; pt.forEach((w) => { if (cnt[w] > 0) { ov++; cnt[w]--; } });
+  const prec = pt.length ? ov / pt.length : 0, rec = gt.length ? ov / gt.length : 0;
+  const f1 = (!pt.length || !gt.length) ? (pt.length === gt.length ? 1 : 0) : (ov ? 2 * prec * rec / (prec + rec) : 0);
+  const out = $("#ans-out"); out.replaceChildren();
+  for (const [l, v] of [["exact match", em], ["contains", contains], ["token F1", f1]]) {
+    const d = el("div", { class: "kpi" }); d.appendChild(el("div", { class: "v" }, fmt(v))); d.appendChild(el("div", { class: "l" }, l)); out.appendChild(d);
+  }
+  $("#ans-detail").textContent = `Normalisé : « ${p} » contre « ${g} » — ${ov} mot(s) commun(s), précision ${fmt(prec)}, rappel ${fmt(rec)}.`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Démo κ                                                               */
+/* ------------------------------------------------------------------ */
+function renderKappa() {
+  const a = +$("#kp-a").value || 0, b = +$("#kp-b").value || 0, c = +$("#kp-c").value || 0, d = +$("#kp-d").value || 0;
+  const n = a + b + c + d;
+  const out = $("#kp-out"); out.replaceChildren();
+  if (!n) return;
+  const po = (a + d) / n;
+  const pe = ((a + b) / n) * ((a + c) / n) + ((c + d) / n) * ((b + d) / n);
+  const kappa = pe === 1 ? NaN : (po - pe) / (1 - pe);
+  for (const [l, v] of [["accord observé pₒ", po], ["accord par hasard pₑ", pe], ["κ de Cohen", kappa]]) {
+    const e = el("div", { class: "kpi" }); e.appendChild(el("div", { class: "v" }, fmt(v))); e.appendChild(el("div", { class: "l" }, l)); out.appendChild(e);
+  }
+  const verdict = Number.isNaN(kappa) ? "indéfini (une seule valeur)" : kappa >= 0.6 ? "au-dessus du repère 0,6" : kappa > 0.2 ? "mieux que le hasard, sous le repère" : "proche du hasard";
+  const e = el("div", { class: "kpi" }); e.appendChild(el("div", { class: "v", style: "font-size:15px" }, verdict)); e.appendChild(el("div", { class: "l" }, "lecture")); out.appendChild(e);
+}
+
+/* ------------------------------------------------------------------ */
+/* Démo Holm                                                            */
+/* ------------------------------------------------------------------ */
+function holm(ps) {
+  const m = ps.length, order = ps.map((p, i) => i).sort((i, j) => ps[i] - ps[j]), adj = new Array(m).fill(1);
+  let run = 0;
+  order.forEach((i, r) => { run = Math.max(run, Math.min(1, (m - r) * ps[i])); adj[i] = run; });
+  return adj;
+}
+function renderHolm() {
+  const ps = $("#holm-in").value.split(",").map((x) => parseFloat(x.trim().replace(",", "."))).filter((x) => !Number.isNaN(x) && x >= 0 && x <= 1);
+  const adj = holm(ps);
+  $("#holm-out").replaceChildren(tableFrom(
+    ["Test", "p brute", "p ajustée (Holm)", "Significatif à 5 % ?"],
+    ps.map((p, i) => [String(i + 1), fmt(p, 4), fmt(adj[i], 4), adj[i] < 0.05 ? "oui" : "non"]), [0, 1, 2]
+  ));
+}
+
+/* ------------------------------------------------------------------ */
+/* Graphique : courbe de couverture (lignes + bandes IC + crosshair)   */
+/* ------------------------------------------------------------------ */
+function drawCurve() {
+  const host = $("#chart-curve"); host.replaceChildren();
+  const legend = el("div", { class: "legend" });
+  CURVE.series.forEach((s) => { const it = el("span"); const k = el("span", { class: "key" }); k.style.background = css(s.color); it.appendChild(k); it.appendChild(document.createTextNode(s.label)); legend.appendChild(it); });
+  host.appendChild(el("div", { style: "font-weight:600;font-size:14px" }, "Couverture selon le nombre de passages remontés (baseline, IC 95 %)"));
+  host.appendChild(legend);
+  const W = widthOf(host), narrow = W < 560;
+  const H = narrow ? 260 : 320, m = { l: 40, r: narrow ? 14 : 150, t: 12, b: 36 };
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Courbes de couverture : articles de 0,57 à 0,96, faits de 0,37 à 0,63, tous les faits de 0,11 à 0,32 quand on passe de 5 à 50 passages." });
+  host.appendChild(svg);
+  const x = (k) => m.l + (k - 0) / 50 * (W - m.l - m.r);
+  const y = (v) => m.t + (1 - v) * (H - m.t - m.b);
+  for (const v of [0, 0.25, 0.5, 0.75, 1]) {
+    svgEl("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: v === 0 ? css("--axis") : css("--grid"), "stroke-width": 1 }, svg);
+    svgText(svg, m.l - 8, y(v) + 4, fmt(v, 2), { "text-anchor": "end" });
+  }
+  for (const k of CURVE.ks) svgText(svg, x(k), H - m.b + 18, String(k), { "text-anchor": "middle" });
+  svgText(svg, (m.l + W - m.r) / 2, H - 4, "passages remontés (k)", { "text-anchor": "middle" });
+  CURVE.series.forEach((s) => {
+    const col = css(s.color);
+    const band = CURVE.ks.map((k, i) => `${x(k)},${y(s.hi[i])}`).join(" ") + " " + CURVE.ks.slice().reverse().map((k, i) => `${x(k)},${y(s.lo[CURVE.ks.length - 1 - i])}`).join(" ");
+    svgEl("polygon", { points: band, fill: col, opacity: 0.10 }, svg);
+    svgEl("polyline", { points: CURVE.ks.map((k, i) => `${x(k)},${y(s.mean[i])}`).join(" "), fill: "none", stroke: col, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+    const last = CURVE.ks.length - 1;
+    svgEl("circle", { cx: x(CURVE.ks[last]), cy: y(s.mean[last]), r: 4, fill: col, stroke: css("--surface"), "stroke-width": 2 }, svg);
+    if (!narrow) svgText(svg, x(CURVE.ks[last]) + 10, y(s.mean[last]) + 4, `${s.label} ${fmt(s.mean[last], 2)}`, { fill: css("--ink-2") });
+    svgEl("circle", { cx: x(CURVE.ks[0]), cy: y(s.mean[0]), r: 4, fill: col, stroke: css("--surface"), "stroke-width": 2 }, svg);
+  });
+  const cross = svgEl("line", { y1: m.t, y2: H - m.b, stroke: css("--axis"), "stroke-width": 1, opacity: 0 }, svg);
+  const hit = svgEl("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent", tabindex: 0 }, svg);
+  const nearest = (px) => { let best = 0; CURVE.ks.forEach((k, i) => { if (Math.abs(x(k) - px) < Math.abs(x(CURVE.ks[best]) - px)) best = i; }); return best; };
+  const show = (i) => {
+    const k = CURVE.ks[i]; cross.setAttribute("x1", x(k)); cross.setAttribute("x2", x(k)); cross.setAttribute("opacity", 1);
+    const scale = host.querySelector("svg").getBoundingClientRect().width / W;
+    showTip(host, x(k) * scale, (m.t + 30) * scale + 40, `k = ${k} passages`, CURVE.series.map((s) => ({ color: css(s.color), value: fmt(s.mean[i]), label: `${s.label} [${fmt(s.lo[i])} ; ${fmt(s.hi[i])}]` })));
+  };
+  let focusIdx = 0;
+  hit.addEventListener("pointermove", (e) => { const r = svg.getBoundingClientRect(); show(nearest((e.clientX - r.left) * W / r.width)); });
+  hit.addEventListener("pointerleave", () => { cross.setAttribute("opacity", 0); hideTip(); });
+  hit.addEventListener("focus", () => show(focusIdx));
+  hit.addEventListener("blur", () => { cross.setAttribute("opacity", 0); hideTip(); });
+  hit.addEventListener("keydown", (e) => { if (e.key === "ArrowRight") { focusIdx = Math.min(CURVE.ks.length - 1, focusIdx + 1); show(focusIdx); } if (e.key === "ArrowLeft") { focusIdx = Math.max(0, focusIdx - 1); show(focusIdx); } });
+  tableToggle("#curve-table-wrap", () => tableFrom(
+    ["k", ...CURVE.series.map((s) => s.label)],
+    CURVE.ks.map((k, i) => [String(k), ...CURVE.series.map((s) => `${fmt(s.mean[i])} [${fmt(s.lo[i])} ; ${fmt(s.hi[i])}]`)]), [0]
+  ));
+}
+
+/* ------------------------------------------------------------------ */
+/* Graphique : écarts du reranker (point + intervalle)                 */
+/* ------------------------------------------------------------------ */
+function drawRerank() {
+  const host = $("#chart-rerank"); host.replaceChildren();
+  host.appendChild(el("div", { style: "font-weight:600;font-size:14px" }, "Écart apporté par le cross-encoder MiniLM (avec − sans), IC 95 %"));
+  const W = widthOf(host), narrow = W < 560;
+  const rowH = narrow ? 60 : 46, m = narrow ? { l: 14, r: 14, t: 14, b: 34 } : { l: 210, r: 150, t: 14, b: 34 };
+  const H = m.t + m.b + rowH * RERANK.length;
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Écarts du reranker : non concluants sur le dense, négatifs et significatifs sur l'hybride." });
+  host.appendChild(svg);
+  const lo = -0.2, hi = 0.1;
+  const x = (v) => m.l + (v - lo) / (hi - lo) * (W - m.l - m.r);
+  for (const v of (narrow ? [-0.2, -0.1, 0, 0.1] : [-0.2, -0.15, -0.1, -0.05, 0, 0.05, 0.1])) {
+    svgEl("line", { x1: x(v), x2: x(v), y1: m.t, y2: H - m.b, stroke: v === 0 ? css("--ink-2") : css("--grid"), "stroke-width": 1 }, svg);
+    svgText(svg, x(v), H - m.b + 18, (v > 0 ? "+" : "") + fmt(v, 2), { "text-anchor": "middle" });
+  }
+  svgText(svg, x(0), H - 2, "← le reranker dégrade · améliore →", { "text-anchor": "middle" });
+  const col = css("--s1");
+  RERANK.forEach((r, i) => {
+    const cy = m.t + rowH * i + (narrow ? rowH - 16 : rowH / 2);
+    if (narrow) {
+      svgText(svg, m.l, cy - 18, `${r.stage} — ${r.metric} : ${sgn(r.d)}, ${r.verdict}`, { fill: css("--ink") });
+    } else {
+      svgText(svg, m.l - 12, cy - 3, r.stage, { "text-anchor": "end", fill: css("--ink"), "font-weight": 600 });
+      svgText(svg, m.l - 12, cy + 12, r.metric, { "text-anchor": "end", fill: css("--ink-2") });
+    }
+    svgEl("line", { x1: x(r.lo), x2: x(r.hi), y1: cy, y2: cy, stroke: col, "stroke-width": 2, "stroke-linecap": "round" }, svg);
+    svgEl("circle", { cx: x(r.d), cy, r: 5, fill: col, stroke: css("--surface"), "stroke-width": 2 }, svg);
+    if (!narrow) svgText(svg, W - m.r + 12, cy + 4, `${sgn(r.d)} · ${r.verdict}`, { fill: css("--ink-2") });
+    const hitR = svgEl("rect", { x: m.l, y: cy - (narrow ? rowH - 16 : rowH / 2), width: W - m.l - m.r, height: rowH, fill: "transparent", tabindex: 0 }, svg);
+    const show = () => {
+      const scale = svg.getBoundingClientRect().width / W;
+      showTip(host, x(r.d) * scale, cy * scale + 30, `${r.stage} — ${r.metric}`, [
+        { color: col, value: `${sgn(r.d)} [${sgn(r.lo)} ; ${sgn(r.hi)}]`, label: "écart, IC 95 %" },
+        { value: `${fmt(r.a)} → ${fmt(r.b)}`, label: "sans → avec" },
+        { value: `${fmt(r.p, 4)} / ${fmt(r.holm, 4)}`, label: "p brute / p Holm" },
+      ]);
+    };
+    hitR.addEventListener("pointermove", show); hitR.addEventListener("focus", show);
+    hitR.addEventListener("pointerleave", hideTip); hitR.addEventListener("blur", hideTip);
+  });
+  tableToggle("#rerank-table-wrap", () => tableFrom(
+    ["Premier étage", "Métrique", "Sans", "Avec", "Écart [IC 95 %]", "p Holm", "Verdict"],
+    RERANK.map((r) => [r.stage, r.metric, fmt(r.a), fmt(r.b), `${sgn(r.d)} [${sgn(r.lo)} ; ${sgn(r.hi)}]`, fmt(r.holm, 4), r.verdict]), [2, 3, 5]
+  ));
+}
+
+/* ------------------------------------------------------------------ */
+/* Graphique : κ des juges (barres horizontales + repère 0,6)          */
+/* ------------------------------------------------------------------ */
+function drawJudges() {
+  const host = $("#chart-judges"); host.replaceChildren();
+  host.appendChild(el("div", { style: "font-weight:600;font-size:14px" }, "Meilleur κ obtenu par juge, contre la vérité terrain"));
+  const W = widthOf(host), narrow = W < 560;
+  const rowH = narrow ? 48 : 34, m = narrow ? { l: 12, r: 48, t: 22, b: 30 } : { l: 230, r: 60, t: 22, b: 30 };
+  const H = m.t + m.b + rowH * JUDGES.length;
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "κ des juges : llama3.2 0,458, granite 0,191, nemotron 0, qwen3.5 aucun jugement, très grand modèle 0,958 ; repère 0,6." });
+  host.appendChild(svg);
+  const x = (v) => m.l + v * (W - m.l - m.r);
+  for (const v of [0, 0.2, 0.4, 0.6, 0.8, 1]) {
+    svgEl("line", { x1: x(v), x2: x(v), y1: m.t, y2: H - m.b, stroke: v === 0 ? css("--axis") : css("--grid"), "stroke-width": 1 }, svg);
+    svgText(svg, x(v), H - m.b + 18, fmt(v, 1), { "text-anchor": "middle" });
+  }
+  svgEl("line", { x1: x(0.6), x2: x(0.6), y1: m.t - 4, y2: H - m.b, stroke: css("--ink-2"), "stroke-width": 1.5 }, svg);
+  svgText(svg, x(0.6) + 4, m.t - 8, "repère 0,6", { fill: css("--ink-2") });
+  const col = css("--s1");
+  JUDGES.forEach((j, i) => {
+    const cy = m.t + rowH * i + (narrow ? rowH - 14 : rowH / 2), bh = 16;
+    if (narrow) svgText(svg, m.l, cy - 13, j.name, { fill: css("--ink") });
+    else svgText(svg, m.l - 10, cy + 4, j.name, { "text-anchor": "end", fill: css("--ink") });
+    if (j.k === null) { svgText(svg, x(0) + 6, cy + 4, j.note, { fill: css("--muted"), "font-style": "italic" }); return; }
+    const w = Math.max(2, x(j.k) - x(0));
+    svgEl("path", { d: `M${x(0)},${cy - bh / 2} h${w - 4} a4,4 0 0 1 4,4 v${bh - 8} a4,4 0 0 1 -4,4 h${-(w - 4)} Z`, fill: col }, svg);
+    svgText(svg, x(0) + w + 6, cy + 4, fmt(j.k), { fill: css("--ink-2") });
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Graphique : bootstrap interactif                                     */
+/* ------------------------------------------------------------------ */
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function runBootstrap() {
+  const n = +$("#bs-n").value, p = +$("#bs-p").value;
+  $("#bs-n-v").textContent = n; $("#bs-p-v").textContent = fmt(p, 2);
+  const rnd = mulberry32(42);
+  const ones = Math.round(n * p), data = Array.from({ length: n }, (_, i) => (i < ones ? 1 : 0));
+  const B = 2000, means = [];
+  for (let b = 0; b < B; b++) { let s = 0; for (let i = 0; i < n; i++) s += data[Math.floor(rnd() * n)]; means.push(s / n); }
+  means.sort((a, c) => a - c);
+  const lo = means[Math.floor(0.025 * B)], hi = means[Math.min(B - 1, Math.floor(0.975 * B))], obs = ones / n;
+  const host = $("#chart-bootstrap"); host.replaceChildren();
+  const W = widthOf(host), H = 220, m = { l: 16, r: 16, t: 22, b: 32 };
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `Distribution de 2000 moyennes bootstrap, intervalle ${fmt(lo)} à ${fmt(hi)}.` });
+  host.appendChild(svg);
+  // Les moyennes ne prennent que des valeurs j/n : chaque classe regroupe le
+  // même nombre de ces valeurs, sinon l'histogramme montre des creux artificiels.
+  const per = Math.max(1, Math.ceil(0.4 * n / 40)), bw0 = per / n;
+  const x0 = Math.max(0, Math.floor((obs - 0.2) * n / per) * per / n - 0.5 / n);
+  const bins = Math.ceil((Math.min(1, obs + 0.2) + 0.5 / n - x0) / bw0), x1 = x0 + bins * bw0;
+  const counts = new Array(bins).fill(0);
+  means.forEach((v) => { const bi = Math.floor((v - x0) / bw0); if (bi >= 0 && bi < bins) counts[bi]++; });
+  const maxC = Math.max(...counts, 1);
+  const x = (v) => m.l + (v - x0) / (x1 - x0) * (W - m.l - m.r), y = (c) => H - m.b - c / maxC * (H - m.t - m.b);
+  svgEl("line", { x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b, stroke: css("--axis") }, svg);
+  const bw = (W - m.l - m.r) / bins;
+  counts.forEach((c, i) => {
+    if (!c) return;
+    const bx = m.l + i * bw + 1, h = H - m.b - y(c), cw = Math.min(24, bw - 2);
+    const center = x0 + (i + 0.5) / bins * (x1 - x0), inside = center >= lo && center <= hi;
+    const r = svgEl("rect", { x: bx, y: y(c), width: cw, height: h, rx: 2, fill: css("--s1"), opacity: inside ? 1 : 0.35, tabindex: -1 }, svg);
+    r.addEventListener("pointermove", () => { const s = svg.getBoundingClientRect().width / W; showTip(host, (bx + cw / 2) * s, y(c) * s + 20, `moyenne ≈ ${fmt(center, 3)}`, [{ color: css("--s1"), value: String(c), label: "tirages sur 2 000" }]); });
+    r.addEventListener("pointerleave", hideTip);
+  });
+  for (const v of [lo, hi]) { svgEl("line", { x1: x(v), x2: x(v), y1: m.t, y2: H - m.b, stroke: css("--ink-2"), "stroke-width": 1.5 }, svg); }
+  svgText(svg, x(lo) - 4, m.t - 8, `2,5 % : ${fmt(lo)}`, { "text-anchor": "end", fill: css("--ink-2") });
+  svgText(svg, x(hi) + 4, m.t - 8, `97,5 % : ${fmt(hi)}`, { fill: css("--ink-2") });
+  const tickStep = W < 560 ? 0.1 : 0.05;
+  for (let t = Math.ceil(x0 / tickStep) * tickStep; t <= x1 + 1e-9; t += tickStep) svgText(svg, x(t), H - m.b + 18, fmt(t, 2), { "text-anchor": "middle" });
+  $("#bs-out").textContent = `Moyenne observée ${fmt(obs)} ; IC 95 % bootstrap [${fmt(lo)} ; ${fmt(hi)}], soit ±${fmt((hi - lo) / 2)}. Barres pleines : les 95 % centraux.`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Thème, sommaire actif, rendu                                         */
+/* ------------------------------------------------------------------ */
+function drawAll() { drawPipeline(); drawCurve(); drawRerank(); drawJudges(); runBootstrap(); }
+const themes = ["auto", "light", "dark"];
+let themeIdx = 0;
+try { const saved = localStorage.getItem("tuto-theme"); if (saved && themes.includes(saved)) themeIdx = themes.indexOf(saved); } catch (e) { /* stockage indisponible */ }
+function applyTheme() {
+  const t = themes[themeIdx];
+  if (t === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", t);
+  $("#theme-btn").textContent = "Thème : " + ({ auto: "auto", light: "clair", dark: "sombre" })[t];
+  try { localStorage.setItem("tuto-theme", t); } catch (e) { /* ignoré */ }
+  drawAll();
+}
+$("#theme-btn").addEventListener("click", () => { themeIdx = (themeIdx + 1) % themes.length; applyTheme(); });
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (themes[themeIdx] === "auto") drawAll(); });
+
+["#ck-strategy", "#ck-size", "#ck-overlap", "#ck-text"].forEach((s) => $(s).addEventListener("input", renderChunks));
+["#rrf-dense", "#rrf-lex", "#rrf-k"].forEach((s) => $(s).addEventListener("input", renderRRF));
+["#ng-fact", "#ng-passage", "#ng-th"].forEach((s) => $(s).addEventListener("input", renderNugget));
+["#ans-pred", "#ans-gold"].forEach((s) => $(s).addEventListener("input", renderAnswer));
+["#kp-a", "#kp-b", "#kp-c", "#kp-d"].forEach((s) => $(s).addEventListener("input", renderKappa));
+$("#holm-in").addEventListener("input", renderHolm);
+["#bs-n", "#bs-p"].forEach((s) => $(s).addEventListener("input", () => { $("#bs-n-v").textContent = $("#bs-n").value; $("#bs-p-v").textContent = fmt(+$("#bs-p").value, 2); }));
+$("#bs-run").addEventListener("click", runBootstrap);
+
+const links = [...document.querySelectorAll("#toc-list a")];
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach((en) => { if (en.isIntersecting) links.forEach((a) => a.classList.toggle("active", a.getAttribute("href") === "#" + en.target.id)); });
+}, { rootMargin: "-20% 0px -70% 0px" });
+document.querySelectorAll("main section").forEach((s) => obs.observe(s));
+
+applyTheme();
+renderChunks(); renderRRF(); buildIR(); renderNugget(); renderAnswer(); renderKappa(); renderHolm();
+let resizeTimer;
+window.addEventListener("resize", () => { hideTip(); clearTimeout(resizeTimer); resizeTimer = setTimeout(drawAll, 150); });
+</script>
+</body>
+</html>

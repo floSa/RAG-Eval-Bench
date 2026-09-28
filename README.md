@@ -321,6 +321,7 @@ Aucun fichier `LICENSE` n'est présent à la racine du dépôt à ce jour.
 
 | Document | Contenu |
 |---|---|
+| **[docs/tuto/index.html](docs/tuto/index.html)** | **Tutoriel complet pour des élèves**, en page web autonome (s'ouvre dans un navigateur, hors ligne) : chaque étage du RAG, chaque métrique calculée à la main, la statistique, les juges, et le diagnostic réel du 28/09, avec démonstrations interactives et exercices corrigés. |
 | **[docs/GLOSSAIRE.md](docs/GLOSSAIRE.md)** | Chaque terme en **français simple**, sans formule. **Commencez par là si le domaine ne vous est pas familier.** |
 | **[docs/BRANCHER-SES-DONNEES.md](docs/BRANCHER-SES-DONNEES.md)** | **Reprendre le banc sur VOS documents** : charger un corpus, construire la vérité terrain, combien annoter, les pièges. |
 | [docs/METHODOLOGIE.md](docs/METHODOLOGIE.md) | Ce que le banc **mesure** et pourquoi on peut le croire : métriques, statistiques, résultats. Commence par une synthèse en un tableau. |
