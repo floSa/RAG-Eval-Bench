@@ -184,6 +184,8 @@ uv run ragbench run configs/experiments/retrieval.yml --matrix --dataset multiho
 | `ragbench config show <fichier>` / `config matrix <fichier>` | Hash et avertissements / développer une matrice |
 | `ragbench index <config> --dataset <nom>` | Construire l'index de corpus |
 | `ragbench run <config> [--matrix]` | Exécuter une campagne |
+| `ragbench diagnose recall-curve <config>` | Couverture des faits selon le nombre de passages, sans génération : le plafond vient-il de la recherche ou de `top_k` ? |
+| `ragbench diagnose compare <A> <B>` | Verdict apparié sur la recherche seule, corrigé par Holm, avec la latence. `<config>` accepte `fichier.yml:variante` |
 | `ragbench eval list` / `eval run <id> -e <évaluateur>` | Évaluateurs disponibles / noter un run |
 | `ragbench show <id>` | Métriques d'un run avec intervalles de confiance |
 | `ragbench compare <A> <B>` | Test apparié entre deux runs |

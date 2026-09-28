@@ -153,3 +153,24 @@ class TestZoneLimite:
         assert c.significant
         assert c.borderline
         assert "LIMITE" in c.verdict()
+
+
+class TestHolm:
+    def test_exemple_de_reference(self):
+        """Exemple classique : p tries 0.01, 0.02, 0.03, 0.04 sur 4 tests."""
+        from ragbench.stats import holm
+
+        adj = holm([0.04, 0.01, 0.03, 0.02])
+        assert [round(x, 4) for x in adj] == [0.06, 0.04, 0.06, 0.06]
+
+    def test_monotone_et_borne(self):
+        from ragbench.stats import holm
+
+        adj = holm([0.9, 0.5, 0.001])
+        assert max(adj) <= 1.0
+        assert adj[2] <= adj[1] <= adj[0]
+
+    def test_un_seul_test_inchange(self):
+        from ragbench.stats import holm
+
+        assert holm([0.03]) == [0.03]

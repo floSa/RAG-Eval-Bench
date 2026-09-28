@@ -29,10 +29,12 @@ db_app = typer.Typer(help="Base de donnees", no_args_is_help=True)
 config_app = typer.Typer(help="Configurations de pipeline", no_args_is_help=True)
 dataset_app = typer.Typer(help="Corpus et jeux de questions", no_args_is_help=True)
 eval_app = typer.Typer(help="Evaluateurs", no_args_is_help=True)
+diagnose_app = typer.Typer(help="Diagnostics sans generation", no_args_is_help=True)
 app.add_typer(db_app, name="db")
 app.add_typer(config_app, name="config")
 app.add_typer(dataset_app, name="dataset")
 app.add_typer(eval_app, name="eval")
+app.add_typer(diagnose_app, name="diagnose")
 
 console = Console()
 RAW_DIR = Path("data/raw")
@@ -308,6 +310,163 @@ def run_cmd(
             console.print(f"  [dim]tokens : {report.usage}[/]")
 
     asyncio.run(_run())
+
+
+def load_config_spec(spec: str) -> PipelineConfig:
+    """Charge `fichier.yml`, ou une variante d'une matrice : `fichier.yml:variante`."""
+    path, sep, variant = spec.rpartition(":")
+    if not sep or not path.endswith((".yml", ".yaml")):
+        return PipelineConfig.from_yaml(spec)
+    configs = {c.name: c for c in PipelineConfig.matrix_from_yaml(path)}
+    if variant not in configs:
+        raise typer.BadParameter(
+            f"variante '{variant}' absente de {path} (disponibles : {', '.join(configs)})"
+        )
+    return configs[variant]
+
+
+@diagnose_app.command("recall-curve")
+def diagnose_recall_curve(
+    config: str,
+    dataset: str = typer.Option(..., help="Nom du dataset en base."),
+    ks: str = typer.Option("5,10,20,30,50", help="Tailles de prefixe, en passages."),
+    split: str = typer.Option("eval", help="Split de questions."),
+    limit: int = typer.Option(None, help="Nombre maximal de questions."),
+    nugget_threshold: float = typer.Option(0.6, help="Seuil de support lexical d'un fait."),
+    output: Path = typer.Option(None, "--json", help="Ecrit la courbe en JSON."),
+) -> None:
+    """Couverture en fonction du nombre de passages : plafond de retrieval ou de top_k ?
+
+    CONFIG : fichier.yml, ou fichier.yml:variante pour une variante de matrice.
+    """
+    from .runner.diagnose import recall_curve
+
+    cfg = load_config_spec(config)
+    try:
+        k_values = [int(k) for k in ks.split(",") if k.strip()]
+    except ValueError as exc:
+        raise typer.BadParameter(f"ks invalide : {ks}") from exc
+
+    with Progress(
+        TextColumn("[bold]{task.description}"), BarColumn(),
+        TextColumn("{task.completed}/{task.total}"), TimeElapsedColumn(),
+        console=console,
+    ) as bar:
+        idx_task = bar.add_task("indexation", total=None)
+        q_task = bar.add_task("retrieval", total=None)
+
+        def _idx(done: int, total: int, _chunks: int) -> None:
+            bar.update(idx_task, completed=done, total=total)
+
+        def _q(done: int, total: int) -> None:
+            bar.update(q_task, completed=done, total=total)
+
+        report = asyncio.run(
+            recall_curve(
+                cfg, dataset_name=dataset, ks=k_values, split=split, limit=limit,
+                nugget_threshold=nugget_threshold, on_progress=_q, on_index_progress=_idx,
+            )
+        )
+
+    console.print(
+        f"[bold]courbe de couverture[/] — config [cyan]{report.config_name}[/] "
+        f"{report.config_hash[:8]}, index {report.index_hash[:8]}, "
+        f"{report.n_questions} questions, {report.n_failed} echecs"
+    )
+    for note in report.notes:
+        console.print(f"[yellow]! {note}[/]")
+
+    labels = {
+        "doc_recall": "recall documents",
+        "hit_rate": "au moins 1 doc",
+        "nugget_recall": "faits couverts",
+        "nugget_full_coverage": "tous les faits",
+    }
+    table = Table("k passages", *labels.values())
+    for k in report.ks:
+        cells = []
+        for metric in labels:
+            ci = report.curve[metric][k]
+            cells.append(
+                "—" if ci.n == 0 else f"{ci.mean:.3f} [dim][{ci.low:.3f}, {ci.high:.3f}][/]"
+            )
+        table.add_row(str(k), *cells)
+    console.print(table)
+
+    first, last = report.ks[0], report.ks[-1]
+    cov = report.curve["nugget_full_coverage"]
+    if cov[first].n:
+        console.print(
+            f"tous les faits presents : {cov[first].mean:.3f} a k={first} -> "
+            f"{cov[last].mean:.3f} a k={last}. Un gain fort designe un probleme "
+            "de classement ou de top_k ; une courbe plate, un probleme de recherche."
+        )
+
+    if output:
+        output.write_text(json.dumps(report.as_dict(), indent=2, ensure_ascii=False))
+        console.print(f"[dim]courbe ecrite dans {output}[/]")
+
+
+@diagnose_app.command("compare")
+def diagnose_compare(
+    config_a: str,
+    config_b: str,
+    dataset: str = typer.Option(..., help="Nom du dataset en base."),
+    ks: str = typer.Option("5,10", help="Tailles de prefixe comparees, en passages."),
+    split: str = typer.Option("eval", help="Split de questions."),
+    limit: int = typer.Option(None, help="Nombre maximal de questions."),
+) -> None:
+    """Verdict apparie A contre B sur le retrieval seul, corrige par Holm.
+
+    CONFIG_A, CONFIG_B : fichier.yml, ou fichier.yml:variante.
+    """
+    from .runner.diagnose import compare_curves, recall_curve
+
+    try:
+        k_values = [int(k) for k in ks.split(",") if k.strip()]
+    except ValueError as exc:
+        raise typer.BadParameter(f"ks invalide : {ks}") from exc
+
+    reports = []
+    for spec in (config_a, config_b):
+        cfg = load_config_spec(spec)
+        with Progress(
+            TextColumn(f"[bold]{escape(cfg.name)}"), BarColumn(),
+            TextColumn("{task.completed}/{task.total}"), TimeElapsedColumn(),
+            console=console,
+        ) as bar:
+            task = bar.add_task("q", total=None)
+
+            def _progress(done: int, total: int, bar=bar, task=task) -> None:
+                bar.update(task, completed=done, total=total)
+
+            report = asyncio.run(
+                recall_curve(
+                    cfg, dataset_name=dataset, ks=k_values, split=split, limit=limit,
+                    on_progress=_progress,
+                )
+            )
+        reports.append(report)
+        for note in report.notes:
+            console.print(f"[yellow]! {escape(cfg.name)} : {note}[/]")
+
+    a, b = reports
+    for label, r in (("A", a), ("B", b)):
+        console.print(
+            f"{label} = [cyan]{escape(r.config_name)}[/] {r.config_hash[:8]} — "
+            f"{r.n_questions} questions, {r.n_failed} echecs, "
+            f"retrieval median {r.median_retrieval_ms or 0:.0f} ms"
+        )
+
+    table = Table("Metrique", "k", "A", "B", "Ecart B-A [IC95]", "p", "p Holm", "Verdict")
+    for row in compare_curves(a, b, ks=k_values):
+        c = row.comparison
+        table.add_row(
+            row.metric, str(row.k), f"{c.mean_a:.3f}", f"{c.mean_b:.3f}",
+            f"{c.delta:+.3f} [{c.ci_low:+.3f}, {c.ci_high:+.3f}]",
+            f"{c.p_value:.4f}", f"{row.p_holm:.4f}", row.verdict,
+        )
+    console.print(table)
 
 
 @app.command("runs")

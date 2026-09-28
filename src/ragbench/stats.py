@@ -259,3 +259,26 @@ def required_n(effect: float, *, baseline: float = 0.5, power: float = 0.8) -> i
     z_alpha, z_beta = 1.96, 0.84 if power <= 0.8 else 1.28
     variance = baseline * (1 - baseline)
     return math.ceil(2 * variance * ((z_alpha + z_beta) / effect) ** 2)
+
+
+def holm(p_values: list[float]) -> list[float]:
+    """p-values ajustees par la procedure de Holm-Bonferroni, dans l'ordre d'entree.
+
+    A appliquer des qu'une meme decision s'appuie sur plusieurs tests : une
+    matrice de variantes, plusieurs k, plusieurs metriques. Au seuil de 5 %,
+    vingt tests independants sous l'hypothese nulle produisent en moyenne un
+    faux positif — la variante « gagnante » serait alors un tirage.
+
+    Holm plutot que Bonferroni : meme garantie sur le risque d'au moins un
+    faux positif dans la famille de tests, mais uniformement plus puissant.
+    """
+    m = len(p_values)
+    order = sorted(range(m), key=lambda i: p_values[i])
+    adjusted = [1.0] * m
+    running = 0.0
+    for rank, i in enumerate(order):
+        # Le max cumule garde la monotonie : une p-value plus petite ne peut
+        # pas recevoir un ajustement plus grand qu'une plus grande.
+        running = max(running, min(1.0, (m - rank) * p_values[i]))
+        adjusted[i] = running
+    return adjusted
