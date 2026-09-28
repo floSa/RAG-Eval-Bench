@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class _Frozen(BaseModel):
@@ -68,7 +68,14 @@ class RetrievalConfig(_Frozen):
     fetch_k: int = 20
     # Constante du Reciprocal Rank Fusion pour le mode hybride.
     rrf_k: int = 60
-    rerank: Literal["none", "llm"] = "none"
+    # "llm"           : le juge note chaque candidat (pointwise, fetch_k appels).
+    # "cross_encoder" : reranker dedie, modele designe par rerank_model.
+    rerank: Literal["none", "llm", "cross_encoder"] = "none"
+    # Modele du cross-encoder, sous la forme "<backend>:<modele>" de la
+    # bibliotheque rerankers, par exemple "flashrank:ms-marco-MiniLM-L-12-v2".
+    # Le backend fait partie de l'identite : le meme poids servi en ONNX ou
+    # en PyTorch ne donne pas exactement les memes scores.
+    rerank_model: str | None = None
     # Plafond de chunks conserves par document source.
     #
     # Sans plafond, un article tres proche de la question occupe tout le
@@ -85,6 +92,23 @@ class RetrievalConfig(_Frozen):
     # Reecriture de la question avant recherche (le pipeline d'origine le
     # faisait en dur ; c'est devenu une variable experimentale).
     query_rewrite: bool = False
+
+    @model_validator(mode="after")
+    def _rerank_coherent(self) -> RetrievalConfig:
+        # Erreur et non avertissement : un rerank_model sans effet changerait
+        # le hash sans changer le pipeline, et deux runs identiques
+        # paraitraient differents.
+        if self.rerank == "cross_encoder" and not self.rerank_model:
+            raise ValueError("rerank=cross_encoder exige rerank_model")
+        if self.rerank_model and self.rerank != "cross_encoder":
+            raise ValueError(
+                f"rerank_model n'a d'effet qu'avec rerank=cross_encoder (rerank={self.rerank})"
+            )
+        if self.rerank_model and ":" not in self.rerank_model:
+            raise ValueError(
+                f"rerank_model attendu sous la forme <backend>:<modele>, recu {self.rerank_model!r}"
+            )
+        return self
 
 
 class GenerationConfig(_Frozen):
@@ -129,6 +153,17 @@ class ModelConfig(_Frozen):
     verifier: str | None = None
 
 
+# Champs ajoutes apres les premiers runs, avec leur valeur neutre. Ils
+# n'entrent dans le hash que s'ils s'en ecartent. Sans cette regle, ajouter une
+# technique au catalogue changerait le hash de TOUTES les configs existantes,
+# et plus aucun run historique ne serait comparable a un nouveau. Tout champ
+# ajoute desormais doit etre declare ici, avec la valeur qui reproduit le
+# comportement d'avant son ajout.
+NEUTRAL_ADDITIONS: dict[tuple[str, str], Any] = {
+    ("retrieval", "rerank_model"): None,
+}
+
+
 class PipelineConfig(_Frozen):
     name: str
     description: str = ""
@@ -144,6 +179,9 @@ class PipelineConfig(_Frozen):
         d = self.model_dump()
         d.pop("name", None)
         d.pop("description", None)
+        for (section, key), neutral in NEUTRAL_ADDITIONS.items():
+            if d.get(section, {}).get(key, neutral) == neutral:
+                d[section].pop(key, None)
         return d
 
     def hash(self) -> str:

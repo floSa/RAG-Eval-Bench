@@ -8,14 +8,18 @@ recall@k.
 
 from __future__ import annotations
 
+import asyncio
+import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import psycopg
 
 from ..config import PipelineConfig
 from ..llm import LLMClient
+from ..settings import settings
 
 
 @dataclass
@@ -26,7 +30,7 @@ class Context:
     text: str
     score: float
     rank: int
-    # Provenance : 'dense' | 'lexical' | 'rrf' | 'rerank'. Utile pour
+    # Provenance : 'dense' | 'lexical' | 'rrf' | 'rerank' | 'cross_encoder'. Utile pour
     # diagnostiquer un mode hybride qui n'apporte rien.
     source: str = "dense"
 
@@ -252,6 +256,104 @@ async def _llm_rerank(
     ]
 
 
+# Cache de telechargement des poids. Chemin relatif au repertoire de travail :
+# la racine du depot en local, /app dans l'image, ou data/ est monte dans les
+# deux cas. N'affecte aucun score, donc hors PipelineConfig.
+CROSS_ENCODER_CACHE = Path("data/cache/rerankers")
+
+_cross_encoders: dict[str, Any] = {}
+# Une seule inference a la fois : le runtime parallelise deja chaque appel sur
+# les coeurs disponibles. Laisser les workers de campagne l'appeler en
+# concurrence sursouscrirait le CPU, et sur un processeur hybride cette
+# sursouscription divise le debit au lieu de le multiplier.
+_cross_encoder_lock = threading.Lock()
+
+
+def _load_cross_encoder(spec: str) -> Any:
+    """Charge (une fois par processus) un reranker de la bibliotheque rerankers."""
+    if spec in _cross_encoders:
+        return _cross_encoders[spec]
+    backend, _, name = spec.partition(":")
+    try:
+        from rerankers import Reranker
+    except ImportError as exc:  # pragma: no cover - depend de l'extra installe
+        raise RerankFailure(
+            "rerank=cross_encoder demande l'extra rerank : uv sync --extra rerank"
+        ) from exc
+    CROSS_ENCODER_CACHE.mkdir(parents=True, exist_ok=True)
+    kwargs: dict[str, Any] = {"model_type": backend, "verbose": 0}
+    if backend == "flashrank":
+        kwargs["cache_dir"] = str(CROSS_ENCODER_CACHE)
+    ranker = Reranker(name, **kwargs)
+    _limit_onnx_threads(ranker, settings.rerank_threads)
+    _cross_encoders[spec] = ranker
+    return ranker
+
+
+def _limit_onnx_threads(ranker: Any, n_threads: int) -> None:
+    """Recree la session ONNX avec un nombre de threads borne.
+
+    FlashRank ouvre sa session avec les options par defaut, sans moyen de les
+    passer : on la reconstruit sur le meme fichier de poids. Les autres
+    backends n'ont pas d'attribut `session` et sont laisses tels quels.
+    """
+    inner = getattr(ranker, "model", None)
+    session = getattr(inner, "session", None)
+    model_path = getattr(session, "_model_path", None)
+    if not model_path:
+        return
+    import onnxruntime as ort
+
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = n_threads
+    options.inter_op_num_threads = 1
+    inner.session = ort.InferenceSession(model_path, sess_options=options)
+
+
+def _cross_encoder_scores(spec: str, question: str, passages: list[str]) -> list[float]:
+    ranker = _load_cross_encoder(spec)
+    with _cross_encoder_lock:
+        ranked = ranker.rank(query=question, docs=passages, doc_ids=list(range(len(passages))))
+    scores = [float("nan")] * len(passages)
+    for result in ranked.results:
+        scores[result.document.doc_id] = float(result.score)
+    return scores
+
+
+def order_by_scores(candidates: list[Context], scores: list[float], source: str) -> list[Context]:
+    """Reordonne par score decroissant ; a egalite, le rang d'origine departage.
+
+    Le departage par rang garde le tri deterministe : sans lui, deux passages
+    de meme score pourraient s'inverser d'un run a l'autre et deplacer un
+    recall@k sans que rien n'ait change.
+    """
+    if len(scores) != len(candidates) or any(s != s for s in scores):  # NaN
+        raise RerankFailure(
+            f"le cross-encoder a renvoye {len(scores)} scores pour {len(candidates)} passages"
+        )
+    ordered = sorted(zip(scores, candidates, strict=True), key=lambda t: (-t[0], t[1].rank))
+    return [
+        Context(c.chunk_id, c.document_id, c.document_external_id, c.text, s, i + 1, source)
+        for i, (s, c) in enumerate(ordered)
+    ]
+
+
+async def _cross_encoder_rerank(
+    cfg: PipelineConfig, question: str, candidates: list[Context]
+) -> list[Context]:
+    """Rerank par cross-encoder : un seul appel pour tout le vivier.
+
+    La question brute est utilisee, pas la requete reecrite : le reranker juge
+    la pertinence pour ce que l'utilisateur a demande.
+    """
+    spec = cfg.retrieval.rerank_model
+    assert spec is not None  # garanti par RetrievalConfig
+    scores = await asyncio.to_thread(
+        _cross_encoder_scores, spec, question, [c.text for c in candidates]
+    )
+    return order_by_scores(candidates, scores, "cross_encoder")
+
+
 # ---------------------------------------------------------------------
 # Reecriture de requete
 # ---------------------------------------------------------------------
@@ -330,6 +432,10 @@ async def retrieve(
 
     if rr.rerank == "llm" and candidates:
         candidates = await _llm_rerank(llm, cfg, question, candidates)
+    elif rr.rerank == "cross_encoder" and candidates:
+        rerank_started = time.perf_counter()
+        candidates = await _cross_encoder_rerank(cfg, question, candidates)
+        debug["rerank_ms"] = int((time.perf_counter() - rerank_started) * 1000)
 
     if rr.max_per_document is not None:
         before = len(candidates)

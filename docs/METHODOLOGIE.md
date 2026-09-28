@@ -175,6 +175,61 @@ Conséquence sur les priorités : régler le prompt ne servira à rien tant que 
 factuelle est à 4 %. C'est exactement le genre d'arbitrage qu'une note globale rend
 invisible.
 
+### Diagnostic de retrieval sans génération (28/09/2026)
+
+Mesures de `ragbench diagnose`, sur le poste CPU (Core Ultra 7, Ollama 0.32 natif),
+177 questions répondables de l'échantillon `eval`.
+
+**Les chiffres historiques ne se reproduisent pas.** Même configuration (hash
+`bb2b20210128`), même échantillon, métriques recalculées par les mêmes évaluateurs :
+
+| Métrique | Documenté | Mesuré le 28/09 |
+|---|---|---|
+| recall@3 | 0.351 | 0.525 |
+| hit_rate@3 | 0.644 | 0.842 |
+| MRR | 0.545 | 0.705 |
+| nugget_recall | 0.244 | 0.368 |
+| nugget_full_coverage | 0.0395 | 0.113 |
+
+Le hash couvre la configuration, pas le code ni le serveur d'inférence : l'écart vient
+de l'un des deux, sans qu'on puisse encore dire lequel. **Conséquence** : ne comparer
+entre eux que des runs produits sur le même poste et la même version du code. Le
+tableau « Retrieval » ci-dessus reste valable en relatif, pas en absolu.
+
+**Le plafond est le classement, pas la recherche.** Couverture selon le nombre de
+passages remontés (`diagnose recall-curve`, config `baseline`) :
+
+| Passages | Articles de référence | Faits couverts | Tous les faits |
+|---|---|---|---|
+| 5 | 0.567 | 0.368 | 0.113 |
+| 10 | 0.710 | 0.455 | 0.181 |
+| 20 | 0.871 | 0.553 | 0.237 |
+| 50 | **0.956** | 0.630 | 0.322 |
+
+À 50 passages, 96 % des articles de référence sont là : ils existent dans le vivier
+mais arrivent trop bas. En revanche, les faits plafonnent à 63 % même quand les bons
+articles sont remontés — deux suspects à tester séparément : le plafond de 2 passages
+par article, et le support lexical (seuil de 60 % des mots), qui rate les reformulations.
+
+**Un cross-encoder faible dégrade un premier étage fort** (`diagnose compare`,
+`configs/experiments/rerank.yml`, `ms-marco-MiniLM-L-12-v2` sur 50 candidats) :
+
+| Premier étage | Métrique @5 | Sans rerank | Avec | Écart [IC95] | p Holm | Verdict |
+|---|---|---|---|---|---|---|
+| dense | articles | 0.567 | 0.552 | −0.015 [−0.057, +0.027] | 1.00 | non concluant |
+| dense | tous les faits | 0.113 | 0.079 | −0.034 [−0.085, +0.017] | 1.00 | non concluant |
+| hybride | articles | 0.619 | 0.556 | **−0.063** [−0.111, −0.016] | 0.026 | **moins bon** |
+| hybride | tous les faits | 0.164 | 0.056 | **−0.107** [−0.164, −0.051] | 0.002 | **moins bon** |
+
+C'est le résultat que l'état de l'art laissait attendre ([ETAT-DE-L-ART.md](ETAT-DE-L-ART.md#11-retrieval)) :
+un reranker entraîné sur des passages courts de MS MARCO ne fait pas mieux qu'un
+premier étage hybride, et le dégrade nettement. Hypothèse non vérifiée : il ignore les
+contraintes de source et de date portées par l'en-tête contextuel. Le coût est réel :
+environ 2 s de CPU par question pour 50 passages (la latence médiane affichée par
+`diagnose compare`, 7 à 8 s, inclut l'attente des workers sérialisés sur le modèle).
+Reste à tester un reranker récent — Qwen3-Reranker-0.6B, le seul à battre nettement le
+retrieval dense dans les mesures publiées.
+
 ---
 
 ## 5. La fiabilité des juges

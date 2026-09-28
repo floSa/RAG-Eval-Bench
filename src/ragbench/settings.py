@@ -44,6 +44,12 @@ class Settings:
     llm_timeout_s: float = field(default_factory=lambda: float(_env("LLM_TIMEOUT_S", "180")))
     llm_max_retries: int = field(default_factory=lambda: int(_env("LLM_MAX_RETRIES", "3")))
 
+    # Threads du cross-encoder local (ONNX Runtime). Par defaut il prend tous
+    # les coeurs ; sur un processeur hybride, 6 a 8 threads vont plus vite que
+    # 16 (1,9 s contre 2,5 s pour 50 passages, mesure sur Core Ultra 7), et
+    # laissent des coeurs au serveur d'inference.
+    rerank_threads: int = field(default_factory=lambda: int(_env("RERANK_THREADS", "6")))
+
     @property
     def dsn(self) -> str:
         return (

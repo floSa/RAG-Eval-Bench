@@ -83,3 +83,35 @@ class TestEnTeteContextuel:
     def test_liste_vide(self):
         doc = {"title": "T", "metadata": {"source": "S"}}
         assert build_header(doc, ()) == ""
+
+
+class TestCrossEncoder:
+    def test_tri_par_score_et_rangs_renumerotes(self):
+        from ragbench.rag.retrieve import order_by_scores
+
+        candidats = [_ctx(1, "A", 1), _ctx(2, "B", 2), _ctx(3, "C", 3)]
+        ordonnes = order_by_scores(candidats, [0.1, 0.9, 0.5], "cross_encoder")
+        assert [c.chunk_id for c in ordonnes] == [2, 3, 1]
+        assert [c.rank for c in ordonnes] == [1, 2, 3]
+        assert {c.source for c in ordonnes} == {"cross_encoder"}
+
+    def test_egalite_departagee_par_rang_d_origine(self):
+        """Sans departage deterministe, deux runs identiques pourraient
+        differer sur un recall@k."""
+        from ragbench.rag.retrieve import order_by_scores
+
+        candidats = [_ctx(1, "A", 1), _ctx(2, "B", 2)]
+        ordonnes = order_by_scores(candidats, [0.5, 0.5], "cross_encoder")
+        assert [c.chunk_id for c in ordonnes] == [1, 2]
+
+    def test_scores_manquants_leve(self):
+        """Un reranking qui echoue en silence imiterait un reranking inutile."""
+        import pytest
+
+        from ragbench.rag.retrieve import RerankFailure, order_by_scores
+
+        candidats = [_ctx(1, "A", 1), _ctx(2, "B", 2)]
+        with pytest.raises(RerankFailure):
+            order_by_scores(candidats, [0.5], "cross_encoder")
+        with pytest.raises(RerankFailure):
+            order_by_scores(candidats, [0.5, float("nan")], "cross_encoder")

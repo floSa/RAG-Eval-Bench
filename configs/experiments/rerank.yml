@@ -1,0 +1,67 @@
+# Reranking par cross-encoder, contre le reranking par LLM mesure sans gain.
+#
+# L'etat de l'art (docs/ETAT-DE-L-ART.md, section 1.1) montre qu'un reranker
+# faible degrade un premier etage fort : il faut donc mesurer le cross-encoder
+# sur chaque premier etage, pas supposer qu'il aide.
+#
+# Verdict sur le retrieval seul, sans generation (quelques minutes) :
+#
+#   uv run ragbench diagnose compare \
+#     configs/experiments/rerank.yml:dense-k5 \
+#     configs/experiments/rerank.yml:dense-k5-ce-minilm --dataset multihop-rag
+#
+# Le vivier est porte a 50 candidats, reordonnes puis plafonnes a 2 passages
+# par article. Autres modeles FlashRank a essayer sur une meilleure connexion :
+# flashrank:rank-T5-flan (110 Mo), flashrank:ms-marco-MultiBERT-L-12 (150 Mo,
+# multilingue, utile pour le mode apercu en francais).
+
+base:
+  name: rerank
+  chunking:
+    strategy: recursive
+    chunk_size: 1000
+    chunk_overlap: 150
+    header_fields: [title, source, published_at]
+    header_scope: chunk
+  retrieval:
+    mode: dense
+    top_k: 5
+    fetch_k: 20
+    max_per_document: 2
+  generation:
+    prompt_template: default
+    temperature: 0.0
+    thinking: false
+    max_tokens: 512
+  # Identiques a la baseline : dense-k5 garde ainsi le hash de la baseline et
+  # reste comparable aux runs historiques.
+  models:
+    generator: gemma4:e4b
+    embedder: nomic-embed-text:latest
+    judge: gemma4:e4b
+
+variants:
+  - name: dense-k5
+    description: Reference, identique a la baseline.
+
+  - name: dense-k5-ce-minilm
+    description: >
+      50 candidats denses reordonnes par ms-marco-MiniLM-L-12-v2 (FlashRank,
+      ONNX, 34 Mo, CPU), 5 gardes.
+    retrieval:
+      rerank: cross_encoder
+      rerank_model: flashrank:ms-marco-MiniLM-L-12-v2
+      fetch_k: 50
+
+  - name: hybrid-k5
+    description: Reference hybride, fusion RRF dense + lexical.
+    retrieval:
+      mode: hybrid
+
+  - name: hybrid-k5-ce-minilm
+    description: 50 candidats hybrides reordonnes par le meme cross-encoder.
+    retrieval:
+      mode: hybrid
+      rerank: cross_encoder
+      rerank_model: flashrank:ms-marco-MiniLM-L-12-v2
+      fetch_k: 50

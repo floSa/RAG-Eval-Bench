@@ -64,3 +64,54 @@ def test_matrice_fusionne_en_profondeur(tmp_path):
     assert configs[1].retrieval.top_k == 10
     # mode n'est pas redeclare par v2 : il doit survivre a la fusion.
     assert configs[1].retrieval.mode == "dense"
+
+
+# Hashes des configs versionnees, releves avant l'ajout du premier champ du
+# catalogue de techniques. S'ils bougent, tous les runs historiques deviennent
+# incomparables aux nouveaux : c'est une regression, pas une mise a jour.
+HASHES_HISTORIQUES = {
+    "configs/baseline.yml": "bb2b20210128",
+    "configs/recommended.yml": "b4a78b819a03",
+}
+
+
+def test_hashes_historiques_stables():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    for path, expected in HASHES_HISTORIQUES.items():
+        assert PipelineConfig.from_yaml(root / path).hash() == expected, path
+
+
+def test_champ_ajoute_neutre_hors_du_hash():
+    """Un champ du catalogue a sa valeur neutre ne change pas l'identite."""
+    from ragbench.config import NEUTRAL_ADDITIONS
+
+    payload = PipelineConfig(name="a").payload()
+    for section, key in NEUTRAL_ADDITIONS:
+        assert key not in payload[section]
+
+
+def test_cross_encoder_entre_dans_le_hash():
+    a = PipelineConfig(name="a")
+    b = PipelineConfig(
+        name="a",
+        retrieval=RetrievalConfig(rerank="cross_encoder", rerank_model="flashrank:m"),
+    )
+    c = PipelineConfig(
+        name="a",
+        retrieval=RetrievalConfig(rerank="cross_encoder", rerank_model="flashrank:autre"),
+    )
+    assert len({a.hash(), b.hash(), c.hash()}) == 3
+
+
+def test_rerank_model_incoherent_refuse():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        RetrievalConfig(rerank="cross_encoder")
+    with pytest.raises(ValidationError):
+        RetrievalConfig(rerank="none", rerank_model="flashrank:m")
+    with pytest.raises(ValidationError):
+        RetrievalConfig(rerank="cross_encoder", rerank_model="sans-backend")

@@ -30,6 +30,10 @@ ui = ["streamlit>=1.40", "altair>=5.4"]
 ragas = ["ragas>=0.4,<1.0", "langchain-community<0.4"]
 deepeval = ["deepeval>=4.1"]
 stats = ["scipy>=1.14", "scikit-learn>=1.5"]
+# Rerankers cross-encoder. Le backend flashrank (ONNX, modeles de 4 a 150 Mo)
+# tourne sur CPU sans torch ; les modeles Hugging Face plus lourds
+# (Qwen3-Reranker, bge-reranker-v2-m3) demanderont l'extra transformers.
+rerank = ["rerankers[flashrank]>=0.10"]
 
 [project.scripts]
 ragbench = "ragbench.cli:app"
