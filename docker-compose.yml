@@ -60,7 +60,7 @@ services:
     environment:
       DB_HOST: db
       LLM_BASE_URL: http://ollama-central:11434/v1
-    command: streamlit run src/ragbench/ui/app.py --server.port 8501 --server.address 0.0.0.0
+    command: streamlit run src/ragbench/ui/app.py --server.port 8501 --server.address 0.0.0.0 --client.toolbarMode viewer
     ports:
       - "8502:8501"
     networks:
