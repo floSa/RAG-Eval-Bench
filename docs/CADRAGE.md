@@ -5,18 +5,44 @@ mesure dans [METHODOLOGIE.md](METHODOLOGIE.md).
 
 ## 1. Pitch
 
-Un banc d'expérimentation qui compare des configurations RAG entre elles, entièrement
-on-premise, en produisant des chiffres sur lesquels on a le droit de s'appuyer.
+Une boîte à outils on-premise pour **évaluer et améliorer un RAG**. Les techniques
+d'amélioration sont des briques qu'on active ou non ; un outillage d'évaluation fixe et
+calibré les mesure. Pour chaque technique, le banc dit **ce qu'elle rapporte, ce qu'elle
+coûte, et sur quels documents**.
 
-1. **Exécuter** une matrice de configurations sur un jeu de questions fixe, avec
-   traçabilité complète (hash de configuration, version du code, consommation de tokens).
-2. **Mesurer** les trois étages séparément — retrieval, génération, bout en bout — avec
-   sept évaluateurs, dont cinq déterministes et deux frameworks externes.
-3. **Trancher** statistiquement : test apparié et intervalle de confiance sur chaque
+Question type : « sur mes documents, le reranking vaut-il le coup ? ». Réponse type :
+« sur le corpus de référence, non : −0.001, p = 0.96, pour 5× le coût. Sur vos contrats,
+tendance à +0.08 sur les questions à documents proches, à confirmer. »
+
+### Deux modes
+
+| Mode | Corpus | Vérité terrain | Ce qu'on obtient |
+|---|---|---|---|
+| **Bench** | Corpus de référence (MultiHop-RAG, HotpotQA) | Fournie avec le corpus | Un **verdict** : gain, intervalle de confiance, test apparié |
+| **Aperçu** | N'importe quelle source : PDF, docx, HTML, tableaux, exports | Questions générées, échantillon relu à la main | Une **tendance**, étiquetée comme telle |
+
+Le bench tranche, l'aperçu oriente. Un aperçu désigne les techniques qui méritent
+d'être confirmées ; il ne les déclare pas gagnantes.
+
+### Deux familles de briques, à ne pas mélanger
+
+| Famille | Rôle | Exemples |
+|---|---|---|
+| **Outils d'évaluation** — la règle | Mesurer | recall@k, nuggets, juges LLM calibrés, Ragas, DeepEval |
+| **Techniques d'amélioration** — ce qu'on mesure | Changer les réponses | découpage, recherche hybride, reranking, reformulation, prompts, vérification dans le pipeline, graphe de connaissance |
+
+**La règle reste fixe, seules les techniques bougent.** Sinon on ne sait plus si un score
+a changé à cause de la technique ou de la règle. Un juge LLM est donc un instrument, pas
+une amélioration ; un LLM qui vérifie les passages *dans* le pipeline (famille CRAG,
+self-RAG) est une technique, et se mesure comme le reranking — avec un juge
+d'évaluation **différent** de ce vérificateur, sans quoi le modèle se note lui-même.
+
+### Trois exigences, héritées du socle
+
+1. **Attribuer la faute** : mesurer séparément retrieval, génération et bout en bout.
+2. **Trancher statistiquement** : test apparié et intervalle de confiance sur chaque
    comparaison, jamais deux moyennes mises côte à côte.
-
-Cas d'usage type : « j'hésite entre recherche dense et hybride ». Le banc répond
-« hybride, +0.098 de recall@3, p<0.001 » — et si l'écart n'est pas concluant, il le dit.
+3. **Se méfier des juges** : les calibrer contre la vérité terrain et publier leur κ.
 
 ---
 
@@ -24,20 +50,53 @@ Cas d'usage type : « j'hésite entre recherche dense et hybride ». Le banc ré
 
 **Dans le périmètre**
 
-- Comparaison de configurations RAG sur un corpus fixe, avec vérité terrain.
-- Attribution de la faute : le banc doit dire si un échec vient du retrieval ou du
-  générateur, pas seulement qu'il y a échec.
-- Branchement de plusieurs frameworks d'évaluation sur les **mêmes** prédictions, pour
-  mesurer leur désaccord.
+- Un **catalogue de techniques** activables par configuration, chacune entrant dans le
+  hash : recherche des passages, découpage, génération, vérification dans le pipeline,
+  graphe de connaissance.
+- Un **outillage d'évaluation** fixe : métriques déterministes, juges calibrés,
+  frameworks externes branchés sur les **mêmes** prédictions.
+- Le **mode bench** sur corpus de référence avec vérité terrain.
+- Le **mode aperçu** sur une source quelconque : ingestion multi-format, analyse du
+  corpus, génération d'un jeu de test avec **questions pièges** (documents proches,
+  champs similaires), relecture humaine d'un échantillon.
+- Un **rapport de recommandation** par technique : gain avec intervalle de confiance,
+  coût (latence, tokens, temps d'indexation), verdict — *à faire*, *inutile*, *non
+  concluant* — ventilé par type de question et type de corpus.
+- Attribution de la faute : dire si un échec vient du retrieval ou du générateur.
 - Fonctionnement 100 % local : aucun appel à un service externe, aucune donnée qui sort.
 
 **Hors périmètre**
 
 - Servir un RAG en production. Le pipeline de [src/ragbench/rag/](../src/ragbench/rag/)
   existe pour être mesuré, pas pour être exploité.
-- L'optimisation automatique d'hyperparamètres. Le banc mesure, l'humain décide.
+- L'optimisation automatique d'hyperparamètres. Le banc recommande, l'humain décide.
+- Présenter un aperçu comme un verdict.
 - Le multi-tenant, l'authentification, la haute disponibilité.
 - L'entraînement ou le fine-tuning de modèles.
+
+### Ce que le mode aperçu ne peut pas dire
+
+Ces limites sont structurelles ; le rapport doit les afficher, pas les taire.
+
+- **Des questions générées sont biaisées.** Écrites à partir d'un passage, elles en
+  reprennent le vocabulaire — ce qui avantage la recherche lexicale — et sont plus
+  faciles que des questions réelles. Elles ne contiennent aucun piège entre documents
+  proches, sauf à les générer exprès.
+- **Un petit corpus donne des intervalles larges.** Avec 50 questions, beaucoup de
+  verdicts seront *non concluant*. C'est la bonne réponse, pas un échec de l'outil.
+- **La recommandation ne vaut que pour les questions testées.** Si les questions réelles
+  ne ressemblent pas au jeu de test, la conclusion ne se transfère pas. Un historique de
+  vraies questions, même court, vaut mieux que mille questions générées.
+- **Sans relecture humaine, les métriques de génération sont des opinions.** Aucun juge
+  local n'atteint κ = 0,6 (voir [JUGES.md](JUGES.md)) ; la relecture d'un échantillon est
+  ce qui permet de calibrer le juge sur le nouveau corpus.
+
+### Stratégie de campagne
+
+Le nombre de combinaisons explose vite, et une campagne se compte en heures sur CPU.
+D'où l'ordre : **chaque technique seule contre la baseline**, puis **seulement les
+gagnantes combinées entre elles**. Les comparaisons multiples sont corrigées, sans quoi
+une technique sur vingt « gagnerait » par hasard.
 
 ---
 
@@ -80,6 +139,8 @@ des résultats.
   lexicale (`to_tsvector('english', …)`) et les seuils de recouvrement sont réglés pour
   ça. Un corpus français ou du code demanderait de revoir la configuration de recherche
   plein-texte.
+  Vrai pour le mode bench ; le mode aperçu devra rendre la configuration plein-texte
+  paramétrable par langue.
 
 - **La granularité de la vérité terrain est le DOCUMENT, pas le passage.** Les métriques
   de retrieval dédupliquent donc les chunks par document. `native.nuggets` compense
@@ -194,15 +255,48 @@ Tableau complet dans le [README](../README.md#licences--composants).
   avant d'ajouter cette complexité. Contrainte connue : vLLM épingle un seul modèle en
   VRAM, sans swap, et exigerait des poids quantifiés sur 16 Go.
 
-- **Faut-il un vérificateur NLI dédié** (HHEM-2.1-open, MiniCheck) pour la fidélité,
-  plutôt qu'un juge génératif ? Reco par défaut : oui, à évaluer — HHEM tourne même en
-  CPU. Non implémenté à ce jour.
+- **Réimplémenter ou emprunter ?** [FlashRAG](https://github.com/RUC-NLPIR/FlashRAG)
+  implémente déjà de nombreuses méthodes RAG, et sa réimplémentation commune fournit
+  les seules comparaisons équitables publiées (Self-RAG y déçoit, IRCoT et Search-R1
+  y gagnent). Reco par défaut : reprendre les **algorithmes** et les briques sous
+  licence permissive listées dans [ETAT-DE-L-ART.md](ETAT-DE-L-ART.md#5-briques-récupérables),
+  n'écrire soi-même que ce qui doit entrer dans le hash de configuration. La valeur
+  propre du banc est ailleurs : vos documents, le 100 % local, la rigueur statistique,
+  le français.
+
+- **Le graphe de connaissance est-il testable sur ce poste ?** Sa construction extrait
+  les entités de tout le corpus par LLM, ce qui se compte en jours sur CPU. Reco par
+  défaut : **HippoRAG 2** plutôt que GraphRAG ou LightRAG — seul graphe à un coût par
+  requête proche du RAG (~1 000 tokens contre 100 000 à 331 000), et seul gain net sur
+  le raisonnement complexe dans GraphRAG-Bench. Le mesurer d'abord sur un sous-corpus,
+  réserver la campagne complète à la machine GPU. Risque : ses gains publiés supposent
+  un extracteur de 70B ; ~7B est le minimum pratique. Son coût d'indexation fait partie
+  du résultat.
+
+- **Faut-il un vérificateur NLI dédié** pour la fidélité, plutôt qu'un juge génératif ?
+  Reco par défaut : **oui**. Les vérificateurs de 0,1 à 0,8 B (HHEM-2.1-Open,
+  MiniCheck-Flan-T5-L, FactCG-DeBERTa-L) approchent les juges de 7–8 B sur
+  LLM-AggreFact et tournent sur CPU ; LettuceDetect a des variantes EuroBERT qui
+  couvrent le français. Les calibrer par κ sur le même jeu que les juges actuels.
+  Non implémenté à ce jour.
+
+- **Faut-il encore exiger κ ≥ 0,6 pour utiliser un juge ?** Reco par défaut : non,
+  **corriger son biais** plutôt que l'écarter. Avec l'échantillon relu à la main, la
+  *prediction-powered inference* (ARES) ou la correction par sensibilité et spécificité
+  (arXiv 2511.21140) donnent des intervalles de confiance honnêtes ; ~100 questions
+  annotées suffisent. C'est ce qui rend le mode aperçu praticable avec des juges
+  locaux.
+
+- **Combien de générations par question ?** Le bruit de génération domine souvent celui
+  du choix des questions (arXiv 2512.21326). Reco par défaut : k = 3 générations pour
+  les comparaisons serrées, k = 1 pour le criblage.
 
 ---
 
 ## 7. Roadmap
 
-Les phases 0 à 3 sont réalisées. La suite n'est pas commencée.
+Les phases 0 à 3 constituent le socle de mesure et sont réalisées. La suite n'est pas
+commencée.
 
 0. **Socle** — configuration hashée, schéma Postgres, client LLM, pipeline paramétrable.
 1. **Dataset et référence** — chargement MultiHop-RAG, évaluateurs déterministes,
@@ -210,8 +304,36 @@ Les phases 0 à 3 sont réalisées. La suite n'est pas commencée.
 2. **Comparaison** — couche statistique, tableau de bord, tests de non-régression.
 3. **Multi-frameworks** — évaluateurs à base de juge, adaptateurs Ragas et DeepEval,
    calibration contre la vérité terrain.
-4. **Non commencé** — observabilité (traces OpenTelemetry), profil vLLM, jeu de
-   robustesse (bruit injecté, contexte contradictoire), intégration continue.
+4. **Catalogue de techniques** — chacune derrière un champ de configuration, donc dans
+   le hash. Ordre fixé par l'[état de l'art](ETAT-DE-L-ART.md) et nos constats :
+   1. *Prérequis, coût nul* : courbe de recall de k = 5 à 50 sur les evidences.
+      Si la couverture monte vite, le plafond est le nombre de passages, pas la
+      qualité du retrieval.
+   2. Décomposition de requête avec retrieval hybride par sous-question.
+   3. Reranker cross-encoder sur un top-50 hybride (Qwen3-Reranker-0.6B,
+      jina-reranker-v3, bge-reranker-v2-m3, via `rerankers`).
+   4. Retrieval itératif type IRCoT.
+   5. Filtrage par métadonnées et désambiguïsation.
+   6. Embeddings récents (Qwen3-Embedding-0.6B, EmbeddingGemma, BGE-M3).
+   7. Graphe de connaissance : HippoRAG 2.
+   8. *Priorité basse, gains non répliqués* : semantic chunking, Self-RAG, HyDE sur
+      corpus lexical, long contexte.
+5. **Évaluation renforcée** — vérificateurs NLI de fidélité, correction du biais des
+   juges (PPI), protocole TREC RAG 2025 (*strict vital recall*, support par phrase),
+   abstention sur quatre types de contexte (supportif, dégradé, absent, **trompeur**),
+   correction de Holm, k générations par question.
+6. **Mode aperçu** — ingestion par Docling (MinerU en option pour les PDF difficiles),
+   analyse du corpus (langue, quasi-doublons, part de tableaux), génération du jeu de
+   test par DeepEval Synthesizer encapsulé : distribution de styles fixée, rejet des
+   questions à fort recouvrement lexical, pièges entre documents voisins, questions
+   sans réponse. Vérité terrain par les prompts nuggetizer et UMBRELA. Relecture d'un
+   échantillon stratifié depuis le tableau de bord. Recherche plein-texte paramétrable
+   par langue.
+7. **Rapport de recommandation** — verdict par technique, gain et coût, ventilation par
+   type de question (taxonomie EnterpriseRAG-Bench) et de corpus, avertissements du
+   mode aperçu affichés.
+8. **Plus tard** — observabilité (traces OpenTelemetry), profil vLLM, jeu de robustesse
+   (bruit injecté, contexte contradictoire), intégration continue.
 
 ---
 
@@ -233,7 +355,9 @@ découpage qui perd du texte ne lève aucune erreur. C'est là que les tests pai
 
 ## 9. Références
 
-État de l'art sur lequel le banc s'appuie :
+La veille complète, à jour au 28/09/2026 — techniques, évaluation, outillage, briques
+récupérables et licences — est dans [ETAT-DE-L-ART.md](ETAT-DE-L-ART.md). Ci-dessous,
+les travaux sur lesquels le socle actuel s'appuie :
 
 | Travail | Apport repris |
 |---|---|

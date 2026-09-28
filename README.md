@@ -323,5 +323,6 @@ Aucun fichier `LICENSE` n'est présent à la racine du dépôt à ce jour.
 | **[docs/BRANCHER-SES-DONNEES.md](docs/BRANCHER-SES-DONNEES.md)** | **Reprendre le banc sur VOS documents** : charger un corpus, construire la vérité terrain, combien annoter, les pièges. |
 | [docs/METHODOLOGIE.md](docs/METHODOLOGIE.md) | Ce que le banc **mesure** et pourquoi on peut le croire : métriques, statistiques, résultats. Commence par une synthèse en un tableau. |
 | [docs/JUGES.md](docs/JUGES.md) | Tout sur les **juges LLM** : reproductibilité, calibration, comparaison de 4 modèles, le plafond atteignable |
+| [docs/ETAT-DE-L-ART.md](docs/ETAT-DE-L-ART.md) | L'**état de l'art** au 28/09/2026 : ce que les mesures indépendantes disent des techniques, juges, générateurs de tests et parseurs, et les briques récupérables |
 | [docs/CADRAGE.md](docs/CADRAGE.md) | Le **pourquoi** : objectifs, périmètre, contraintes, hypothèses, décisions, roadmap |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Le **comment** : services, flux, schéma de base, décisions techniques, limites |
