@@ -265,9 +265,13 @@ def run_cmd(
     label: str = typer.Option("", help="Etiquette lisible du run."),
     matrix: bool = typer.Option(False, help="Traite le fichier comme une matrice base/variants."),
 ) -> None:
-    """Execute une campagne : config(s) x jeu de questions -> run(s)."""
+    """Execute une campagne : config(s) x jeu de questions -> run(s).
+
+    CONFIG : fichier.yml, fichier.yml:variante (une variante de matrice), ou
+    une matrice entiere avec --matrix.
+    """
     configs = (
-        PipelineConfig.matrix_from_yaml(config) if matrix else [PipelineConfig.from_yaml(config)]
+        PipelineConfig.matrix_from_yaml(config) if matrix else [load_config_spec(config)]
     )
 
     async def _run() -> None:
@@ -457,6 +461,11 @@ def diagnose_compare(
             f"{r.n_questions} questions, {r.n_failed} echecs, "
             f"retrieval median {r.median_retrieval_ms or 0:.0f} ms"
         )
+        for key, count in sorted(r.fallbacks.items()):
+            console.print(
+                f"[yellow]! {label} : {key} sur {count}/{r.n_questions} questions — "
+                "la technique est retombee sur la question d'origine[/]"
+            )
 
     table = Table("Metrique", "k", "A", "B", "Ecart B-A [IC95]", "p", "p Holm", "Verdict")
     for row in compare_curves(a, b, ks=k_values):

@@ -92,6 +92,27 @@ class RetrievalConfig(_Frozen):
     # Reecriture de la question avant recherche (le pipeline d'origine le
     # faisait en dur ; c'est devenu une variable experimentale).
     query_rewrite: bool = False
+    # Decomposition de la question en sous-requetes, chacune cherchee
+    # separement, les classements fusionnes par RRF avec celui de la question
+    # d'origine. Cible le multi-hop : une question qui exige 3 articles
+    # ressemble rarement a chacun d'eux pris isolement.
+    query_decompose: bool = False
+    max_sub_queries: int = 3
+    # HyDE : le generateur redige un passage hypothetique qui repondrait a la
+    # question, et c'est CE passage qui est vectorise pour la recherche dense
+    # (la recherche lexicale garde la question). Aide quand vocabulaire de la
+    # question et des documents divergent ; peut nuire quand ils sont alignes.
+    hyde: bool = False
+
+    @model_validator(mode="after")
+    def _requete_coherente(self) -> RetrievalConfig:
+        if self.max_sub_queries != 3 and not self.query_decompose:
+            raise ValueError("max_sub_queries n'a d'effet qu'avec query_decompose=true")
+        if self.max_sub_queries < 1:
+            raise ValueError("max_sub_queries doit etre >= 1")
+        if self.hyde and self.mode == "lexical":
+            raise ValueError("hyde n'agit que sur la recherche dense : sans effet en mode lexical")
+        return self
 
     @model_validator(mode="after")
     def _rerank_coherent(self) -> RetrievalConfig:
@@ -161,6 +182,9 @@ class ModelConfig(_Frozen):
 # comportement d'avant son ajout.
 NEUTRAL_ADDITIONS: dict[tuple[str, str], Any] = {
     ("retrieval", "rerank_model"): None,
+    ("retrieval", "query_decompose"): False,
+    ("retrieval", "max_sub_queries"): 3,
+    ("retrieval", "hyde"): False,
 }
 
 

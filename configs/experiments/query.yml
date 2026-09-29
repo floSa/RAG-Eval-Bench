@@ -1,0 +1,64 @@
+# Techniques cote requete : reecriture, decomposition, HyDE.
+#
+# Mesurees sur la recherche seule, sans generation de reponse :
+#
+#   uv run ragbench diagnose compare \
+#     configs/experiments/query.yml:hybrid-k5 \
+#     configs/experiments/query.yml:hybrid-decompose --dataset multihop-rag
+#
+# Base : le premier etage de recommended.yml (hybride RRF, en-tete, plafond de
+# 2 passages par article, vivier de 30). Chaque variante n'ajoute qu'UNE
+# technique. Le generateur ne sert ici qu'a reecrire, decomposer ou rediger le
+# passage hypothetique : qwen3.5:4b, le plus recent des modeles legers.
+#
+# Attendus de l'etat de l'art (docs/ETAT-DE-L-ART.md, section 1.1) :
+#   decompose : meilleur gain publie sur MultiHop-RAG (+36,7 % de MRR@10)
+#   hyde      : gain quand question et documents divergent en vocabulaire,
+#               regression quand ils sont alignes — MultiHop-RAG est lexical
+#   rewrite   : jamais mesure sur ce banc
+
+base:
+  name: query
+  chunking:
+    strategy: recursive
+    chunk_size: 1000
+    chunk_overlap: 150
+    document_prefix: "search_document: "
+    header_fields: [title, source, published_at]
+    header_scope: chunk
+  retrieval:
+    mode: hybrid
+    top_k: 5
+    fetch_k: 30
+    max_per_document: 2
+    query_prefix: "search_query: "
+  generation:
+    prompt_template: default
+    temperature: 0.0
+    max_tokens: 256
+    thinking: false
+  models:
+    generator: qwen3.5:4b
+    embedder: nomic-embed-text:latest
+    judge: llama3.2:3b
+  seed: 42
+
+variants:
+  - name: hybrid-k5
+    description: Reference, sans technique de requete.
+
+  - name: hybrid-rewrite
+    description: Question reecrite en requete concise avant recherche.
+    retrieval: {query_rewrite: true}
+
+  - name: hybrid-decompose
+    description: >
+      Question decomposee en 3 sous-requetes au plus ; les classements des
+      sous-requetes et de la question d'origine sont fusionnes par RRF.
+    retrieval: {query_decompose: true}
+
+  - name: hybrid-hyde
+    description: >
+      Passage hypothetique redige par le generateur, vectorise a la place de
+      la question pour la composante dense ; le lexical garde la question.
+    retrieval: {hyde: true}

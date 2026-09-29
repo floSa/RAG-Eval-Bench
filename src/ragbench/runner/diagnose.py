@@ -154,6 +154,10 @@ class CurveReport:
     # Latence de retrieval par question, reranking compris : le cout d'une
     # technique fait partie de son verdict.
     retrieval_ms: list[int] = field(default_factory=list, repr=False)
+    # Replis des techniques de requete (reecriture, decomposition, HyDE) :
+    # une technique qui echoue en silence produit les memes chiffres qu'une
+    # technique inutile. Le compte dit laquelle des deux on mesure.
+    fallbacks: dict[str, int] = field(default_factory=dict)
 
     @property
     def median_retrieval_ms(self) -> float | None:
@@ -172,6 +176,7 @@ class CurveReport:
             "n_questions": self.n_questions,
             "n_failed": self.n_failed,
             "median_retrieval_ms": self.median_retrieval_ms,
+            "fallbacks": self.fallbacks,
             "notes": self.notes,
             "curve": {
                 metric: {
@@ -236,6 +241,7 @@ async def recall_curve(
             queue.put_nowait(q)
         per_question: dict[int, dict[int, dict[str, float | None]]] = {}
         latencies: list[int] = []
+        fallbacks: dict[str, int] = {}
         failed = 0
         done = 0
         lock = asyncio.Lock()
@@ -263,6 +269,9 @@ async def recall_curve(
                         async with lock:
                             per_question[q["id"]] = row
                             latencies.append(result.elapsed_ms)
+                            for key, value in result.debug.items():
+                                if key.endswith("_fallback") and value:
+                                    fallbacks[key] = fallbacks.get(key, 0) + 1
                     except Exception:  # noqa: BLE001
                         # Comptee, jamais avalee : un diagnostic calcule sur
                         # une partie des questions doit le dire.
@@ -287,6 +296,7 @@ async def recall_curve(
         notes=notes,
         per_question=per_question,
         retrieval_ms=latencies,
+        fallbacks=fallbacks,
     )
 
 

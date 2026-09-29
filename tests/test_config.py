@@ -115,3 +115,21 @@ def test_rerank_model_incoherent_refuse():
         RetrievalConfig(rerank="none", rerank_model="flashrank:m")
     with pytest.raises(ValidationError):
         RetrievalConfig(rerank="cross_encoder", rerank_model="sans-backend")
+
+
+def test_techniques_de_requete_coherentes():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        RetrievalConfig(max_sub_queries=5)  # sans query_decompose : sans effet
+    with pytest.raises(ValidationError):
+        RetrievalConfig(mode="lexical", hyde=True)  # HyDE n'agit que sur le dense
+    assert RetrievalConfig(query_decompose=True, max_sub_queries=5).max_sub_queries == 5
+
+
+def test_techniques_de_requete_dans_le_hash():
+    base = PipelineConfig(name="a")
+    decompose = PipelineConfig(name="a", retrieval=RetrievalConfig(query_decompose=True))
+    hyde = PipelineConfig(name="a", retrieval=RetrievalConfig(hyde=True))
+    assert len({base.hash(), decompose.hash(), hyde.hash()}) == 3

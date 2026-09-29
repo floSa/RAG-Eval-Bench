@@ -115,3 +115,25 @@ class TestCrossEncoder:
             order_by_scores(candidats, [0.5], "cross_encoder")
         with pytest.raises(RerankFailure):
             order_by_scores(candidats, [0.5, float("nan")], "cross_encoder")
+
+
+class TestSousRequetes:
+    def test_puces_et_numeros_retires(self):
+        """Les petits modeles numerotent malgre la consigne."""
+        from ragbench.rag.retrieve import parse_sub_queries
+
+        text = "1. Will Lutz field goal Sporting News\n- Connor Bedard goalies NYT\n\n"
+        assert parse_sub_queries(text, 3) == [
+            "Will Lutz field goal Sporting News", "Connor Bedard goalies NYT",
+        ]
+
+    def test_plafond_et_doublons(self):
+        from ragbench.rag.retrieve import parse_sub_queries
+
+        text = "a\nA\nb\nc\nd"
+        assert parse_sub_queries(text, 3) == ["a", "b", "c"]
+
+    def test_reponse_vide(self):
+        from ragbench.rag.retrieve import parse_sub_queries
+
+        assert parse_sub_queries("", 3) == []
