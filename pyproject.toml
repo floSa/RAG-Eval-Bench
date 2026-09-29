@@ -38,6 +38,8 @@ rerank = ["rerankers[flashrank]>=0.10"]
 # PyTorch : le wheel PyPI par defaut embarque CUDA et plusieurs Go de
 # bibliotheques NVIDIA, inutiles sur un poste sans GPU.
 rerank-hf = ["transformers>=4.51", "torch>=2.4"]
+rerank-hf-cuda = ["transformers>=4.51", "torch>=2.4"]
+cuda = ["torch>=2.4"]
 
 [project.scripts]
 ragbench = "ragbench.cli:app"
@@ -85,10 +87,25 @@ dev = [
     "pytest>=9.1.1",
 ]
 
+[tool.uv]
+conflicts = [
+    [ { extra = "rerank-hf" }, { extra = "cuda" } ],
+    [ { extra = "rerank-hf" }, { extra = "rerank-hf-cuda" } ],
+]
+
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
 [tool.uv.sources]
-torch = [{ index = "pytorch-cpu" }]
+torch = [
+    { index = "pytorch-cu128", extra = "cuda" },
+    { index = "pytorch-cu128", extra = "rerank-hf-cuda" },
+    { index = "pytorch-cpu", extra = "rerank-hf" },
+]
