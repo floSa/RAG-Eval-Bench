@@ -176,7 +176,7 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
     <li><a href="#generation">7. Mesurer la réponse</a></li>
     <li><a href="#juges">8. Les juges LLM</a></li>
     <li><a href="#stats">9. Trancher : la statistique</a></li>
-    <li><a href="#tp">10. TP : le diagnostic du 28/09</a></li>
+    <li><a href="#tp">10. TP : diagnostic et campagnes</a></li>
     <li><a href="#methode">11. La méthode d'ablation</a></li>
     <li><a href="#apercu">12. Vos propres documents</a></li>
     <li><a href="#exercices">13. Exercices</a></li>
@@ -190,7 +190,7 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 
 <!-- ================================================================ -->
 <section id="intro">
-<p class="muted">Tutoriel · ragbench · données mesurées le 28/09/2026</p>
+<p class="muted">Tutoriel · ragbench · données mesurées les 28 et 29/09/2026</p>
 <h1>Évaluer un RAG, pour de vrai</h1>
 <p class="lead">Construire un système de questions-réponses sur des documents est facile. Savoir
 s'il marche, <em>pourquoi</em> il échoue, et si une modification l'a réellement amélioré, l'est
@@ -526,7 +526,8 @@ de la baseline. Remède : un vivier plus large.</div>
   Coûte <code>fetch_k</code> appels LLM par question — 20 appels ici.</li>
   <li><strong><code>cross_encoder</code></strong> : un petit modèle dédié lit la paire
   (question, passage) d'un seul tenant et produit un score de pertinence. Bien plus rapide :
-  ~2 s de CPU pour 50 passages avec <code>ms-marco-MiniLM-L-12-v2</code> (34 Mo, ONNX).</li>
+  ~2 s de CPU pour 50 passages avec <code>ms-marco-MiniLM-L-12-v2</code> (34 Mo, ONNX). Le banc propose aussi
+  <code>qwen3:Qwen/Qwen3-Reranker-0.6B</code>, plus récent et plus lourd : ~4 s sur GPU, ~140 s sur CPU.</li>
 </ul>
 <pre><code>retrieval:
   rerank: cross_encoder
@@ -1176,7 +1177,7 @@ le banc mesure), <code>docs/JUGES.md</code> (les juges en détail), <code>docs/C
 
 <script>
 /* ------------------------------------------------------------------ */
-/* Données mesurées (ragbench, 28/09/2026, 177 questions répondables)  */
+/* Données mesurées (ragbench, 28-29/09/2026, 177 questions répondables) */
 /* ------------------------------------------------------------------ */
 const CURVE = {
   ks: [5, 10, 20, 30, 50],
@@ -1513,7 +1514,7 @@ function drawCurve() {
   host.appendChild(legend);
   const W = widthOf(host), narrow = W < 560;
   const H = narrow ? 260 : 320, m = { l: 40, r: narrow ? 14 : 150, t: 12, b: 36 };
-  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Courbes de couverture : articles de 0,57 à 0,96, faits de 0,37 à 0,63, tous les faits de 0,11 à 0,32 quand on passe de 5 à 50 passages." });
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Courbes de couverture : articles de 0,40 à 0,82, faits de 0,25 à 0,53, tous les faits de 0,05 à 0,21 quand on passe de 5 à 50 passages." });
   host.appendChild(svg);
   const x = (k) => m.l + (k - 0) / 50 * (W - m.l - m.r);
   const y = (v) => m.t + (1 - v) * (H - m.t - m.b);
