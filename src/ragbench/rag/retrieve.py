@@ -302,13 +302,21 @@ class Qwen3Reranker:
             raise RerankFailure(
                 "le backend qwen3 demande l'extra rerank-hf : uv sync --extra rerank-hf"
             ) from exc
-        torch.set_num_threads(n_threads)
         self._torch = torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = device
+        if device == "cpu":
+            torch.set_num_threads(n_threads)
         cache = str(CROSS_ENCODER_CACHE / "hf")
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name, padding_side="left", cache_dir=cache
         )
-        self.model = AutoModelForCausalLM.from_pretrained(model_name, cache_dir=cache).eval()
+        dtype = torch.float16 if device == "cuda" else torch.float32
+        self.model = (
+            AutoModelForCausalLM.from_pretrained(model_name, cache_dir=cache, torch_dtype=dtype)
+            .to(device)
+            .eval()
+        )
         self.yes_id = self.tokenizer.convert_tokens_to_ids("yes")
         self.no_id = self.tokenizer.convert_tokens_to_ids("no")
         self.prefix_ids = self.tokenizer.encode(self.PREFIX, add_special_tokens=False)
@@ -329,6 +337,8 @@ class Qwen3Reranker:
             )
             enc["input_ids"] = [self.prefix_ids + ids + self.suffix_ids for ids in enc["input_ids"]]
             batch = self.tokenizer.pad(enc, padding=True, return_tensors="pt")
+            if self.device == "cuda":
+                batch = {k: v.to(self.device) for k, v in batch.items()}
             with torch.no_grad():
                 logits = self.model(**batch).logits[:, -1, :]
             pair = torch.stack([logits[:, self.no_id], logits[:, self.yes_id]], dim=1)
@@ -342,27 +352,28 @@ def _load_cross_encoder(spec: str) -> Any:
     Backends : ceux de la bibliotheque rerankers (flashrank…), et qwen3 pour
     Qwen3-Reranker via transformers.
     """
-    if spec in _cross_encoders:
-        return _cross_encoders[spec]
-    backend, _, name = spec.partition(":")
-    if backend == "qwen3":
+    with _cross_encoder_lock:
+        if spec in _cross_encoders:
+            return _cross_encoders[spec]
+        backend, _, name = spec.partition(":")
+        if backend == "qwen3":
+            CROSS_ENCODER_CACHE.mkdir(parents=True, exist_ok=True)
+            _cross_encoders[spec] = Qwen3Reranker(name, settings.rerank_threads)
+            return _cross_encoders[spec]
+        try:
+            from rerankers import Reranker
+        except ImportError as exc:  # pragma: no cover - depend de l'extra installe
+            raise RerankFailure(
+                "rerank=cross_encoder demande l'extra rerank : uv sync --extra rerank"
+            ) from exc
         CROSS_ENCODER_CACHE.mkdir(parents=True, exist_ok=True)
-        _cross_encoders[spec] = Qwen3Reranker(name, settings.rerank_threads)
-        return _cross_encoders[spec]
-    try:
-        from rerankers import Reranker
-    except ImportError as exc:  # pragma: no cover - depend de l'extra installe
-        raise RerankFailure(
-            "rerank=cross_encoder demande l'extra rerank : uv sync --extra rerank"
-        ) from exc
-    CROSS_ENCODER_CACHE.mkdir(parents=True, exist_ok=True)
-    kwargs: dict[str, Any] = {"model_type": backend, "verbose": 0}
-    if backend == "flashrank":
-        kwargs["cache_dir"] = str(CROSS_ENCODER_CACHE)
-    ranker = Reranker(name, **kwargs)
-    _limit_onnx_threads(ranker, settings.rerank_threads)
-    _cross_encoders[spec] = ranker
-    return ranker
+        kwargs: dict[str, Any] = {"model_type": backend, "verbose": 0}
+        if backend == "flashrank":
+            kwargs["cache_dir"] = str(CROSS_ENCODER_CACHE)
+        ranker = Reranker(name, **kwargs)
+        _limit_onnx_threads(ranker, settings.rerank_threads)
+        _cross_encoders[spec] = ranker
+        return ranker
 
 
 def _limit_onnx_threads(ranker: Any, n_threads: int) -> None:
