@@ -214,8 +214,11 @@ une démonstration interactive : modifiez les valeurs, c'est le meilleur moyen d
 <h3>Le banc utilisé</h3>
 <p><code>ragbench</code> est un banc d'évaluation <strong>100 % local</strong> : les documents,
 les modèles (servis par Ollama) et la base (PostgreSQL + pgvector) tournent sur la machine.
-Aucune donnée ne sort. Toutes les mesures de ce tutoriel ont été faites sur un portable sans
-GPU (Intel Core Ultra 7, 16 cœurs, 15 Go de RAM) — ce qui a son importance, on le verra.</p>
+Aucune donnée ne sort. Les premières explorations ont été menées sur un portable sans GPU
+(Intel Core Ultra 7, 16 cœurs, 16 Go de RAM), puis l'ensemble des campagnes intensives (reranking
+cross-encoder, matrice de générateurs, recalage rigoureux) a été exécuté sur un poste fixe GPU
+(NVIDIA GeForce RTX 4060 Ti 16 Go VRAM, 64 Go RAM, Ryzen 5 9600X), réduisant la latence par question
+d'un facteur 30 (~3-4 minutes par run contre ~2 heures sur CPU).</p>
 
 <details>
 <summary>Installer et lancer le banc (15 minutes, hors téléchargements)</summary>
@@ -892,7 +895,7 @@ de trancher.</p>
 
 <!-- ================================================================ -->
 <section id="tp">
-<h2><span class="num">10</span>TP : le diagnostic du 28/09</h2>
+<h2><span class="num">10</span>TP : diagnostic, reranking et campagnes GPU</h2>
 <p>On applique tout ce qui précède sur le banc réel. Question de départ, posée par la
 méthodologie : <em>le système est-il limité par la <strong>qualité</strong> de la recherche,
 ou simplement par le <strong>nombre</strong> de passages donnés au générateur ?</em></p>
@@ -907,52 +910,77 @@ campagne d'une heure.</p>
 <div id="curve-table-wrap"></div>
 <h4>Lecture</h4>
 <ul>
-  <li><strong>Les bons articles existent, mais arrivent trop bas.</strong> 57 % des articles de
-  référence sont dans les 5 premiers passages, 96 % dans les 50 premiers. Le problème est un
-  problème de <em>classement</em> : un meilleur ordre, ou plus de passages, en récupérerait
-  l'essentiel.</li>
-  <li><strong>Les faits plafonnent à 63 %</strong> même quand les bons articles sont là. Deux
-  suspects, à tester séparément : le plafond de 2 passages par article (si le fait est dans le
-  3<sup>e</sup> paragraphe, il n'arrive jamais) et le critère lexical à 60 %, qui rate les
-  reformulations.</li>
-  <li><strong>Tous les faits</strong> ne sont réunis que pour 11 % des questions à k = 5. Une
-  réponse multi-hop correcte est impossible dans les 89 % restants, quel que soit le prompt.</li>
+  <li><strong>Les bons articles existent, mais arrivent trop bas.</strong> 40 % des articles de
+  référence sont dans les 5 premiers passages, 82 % dans les 50 premiers (et 95 % des questions ont
+  au moins un bon article dans le vivier). Le problème est un problème de <em>classement</em> :
+  un meilleur ordre en récupérerait l'essentiel dès le top-5.</li>
+  <li><strong>Les faits nécessaires plafonnent à 53 %</strong> même quand les bons articles sont là. Deux
+  suspects, testés par la suite : le plafond de passages par article (testé en ablation au chapitre 11)
+  et le critère lexical à 60 %, qui rate les reformulations sémantiques.</li>
+  <li><strong>Tous les faits</strong> ne sont réunis que pour 4,5 % des questions à k = 5 (et 20,9 % à k = 50).
+  Une réponse multi-hop correcte sans hallucination est compromise dans les 95 % restants sans un réordonnancement efficace.</li>
 </ul>
 
-<h3>10.2 Le reranker aide-t-il ?</h3>
-<p>Puisque les bons articles sont dans le vivier mais mal classés, un reranker devrait aider.
-On le vérifie par un test apparié sur la recherche seule, corrigé par Holm :</p>
-<pre><code>uv run ragbench diagnose compare \
+<h3>10.2 Le reranker aide-t-il ? De MiniLM à Qwen3-Reranker</h3>
+<p>Puisque les bons articles sont dans le vivier mais mal classés, un reranker cross-encoder devrait aider.
+Nous avons testé deux générations de modèles par comparaison appariée (corrigée par Holm) :</p>
+<pre><code># 1. Cross-encoder historique (MS MARCO)
+uv run ragbench diagnose compare \
   configs/experiments/rerank.yml:hybrid-k5 \
-  configs/experiments/rerank.yml:hybrid-k5-ce-minilm --dataset multihop-rag</code></pre>
+  configs/experiments/rerank.yml:hybrid-k5-ce-minilm --dataset multihop-rag
+
+# 2. Cross-encoder moderne sur GPU CUDA (vivier fetch_k: 50)
+uv run ragbench diagnose compare \
+  configs/experiments/rerank.yml:hybrid-k5 \
+  configs/experiments/rerank.yml:hybrid-k5-qwen3-reranker --dataset multihop-rag</code></pre>
 <div class="chart" id="chart-rerank"></div>
 <div id="rerank-table-wrap"></div>
-<p><strong>Verdict : le cross-encoder MiniLM est rejeté.</strong> Il n'apporte rien au dense
+<p><strong>1. Le cross-encoder MiniLM est rejeté :</strong> Il n'apporte rien au dense
 (non concluant), et il <strong>dégrade nettement l'hybride</strong> : −0,063 d'articles
-retrouvés et −0,107 de couverture complète à k = 5, conclusions qui survivent à Holm. Il
-coûte en plus ~2 s de CPU par question.</p>
-<p>C'est contre-intuitif, et c'est pourtant ce que l'état de l'art laissait attendre : un
-reranker entraîné sur les passages courts de MS MARCO peut faire <em>moins bien</em> qu'un
-premier étage fort. Hypothèse (non vérifiée) : il ignore les contraintes de source et de date
-portées par l'en-tête, essentielles sur ce corpus. Moralité : <strong>on ne suppose pas qu'une
-technique aide, on le mesure</strong> — sur son corpus.</p>
+retrouvés et −0,107 de couverture complète à k = 5 (survivant à Holm). Entraîné sur les passages courts
+de MS MARCO, il échoue sur des articles journalistiques longs et ignore les en-têtes contextuels.</p>
+<p><strong>2. Triomphe de Qwen3-Reranker-0.6B :</strong> Évalué en fp16 sur GPU CUDA avec un vivier étendu
+à 50 candidats, il apporte le gain le plus spectaculaire du projet :
+<strong>+0,192 de rappel d'articles à k = 5</strong> (de 0,512 à 0,704, p Holm = 0,0008) et
+<strong>fait plus que doubler la couverture complète des faits</strong> (de 11,3 % à 27,1 %, soit +0,158, p Holm = 0,0008).
+La latence médiane mesurée est de 4,39 s par question. Le classement n'est plus un goulot d'étranglement.</p>
 
-<h3>10.3 Une leçon de reproductibilité</h3>
-<p>Même configuration (hash <code>bb2b20210128</code>), même échantillon, mêmes évaluateurs —
-mais une autre machine et une version plus récente du code :</p>
+<h3>10.3 Une leçon de reproductibilité : l'énigme résolue</h3>
+<p>Même configuration (hash <code>bb2b20210128</code>), même échantillon de 200 questions, mêmes évaluateurs :</p>
 <div class="tablewrap"><table>
-<thead><tr><th>Métrique</th><th class="num">Documenté (poste GPU, juillet)</th><th class="num">Mesuré (poste CPU, 28/09)</th></tr></thead>
+<thead><tr><th>Métrique</th><th class="num">Documenté initial (GPU, juillet)</th><th class="num">Mesuré portable CPU (28/09)</th><th class="num">Recalage GPU (run 25, 29/09)</th></tr></thead>
 <tbody>
-<tr><td>recall@3</td><td class="num">0,351</td><td class="num">0,525</td></tr>
-<tr><td>hit_rate@3</td><td class="num">0,644</td><td class="num">0,842</td></tr>
-<tr><td>MRR</td><td class="num">0,545</td><td class="num">0,705</td></tr>
-<tr><td>nugget_recall</td><td class="num">0,244</td><td class="num">0,368</td></tr>
-<tr><td>nugget_full_coverage</td><td class="num">0,040</td><td class="num">0,113</td></tr>
+<tr><td>recall@3</td><td class="num">0,351</td><td class="num">0,525</td><td class="num"><strong>0,351</strong></td></tr>
+<tr><td>hit_rate@3</td><td class="num">0,644</td><td class="num">0,842</td><td class="num"><strong>0,644</strong></td></tr>
+<tr><td>MRR</td><td class="num">0,545</td><td class="num">0,705</td><td class="num"><strong>0,545</strong></td></tr>
+<tr><td>nugget_recall</td><td class="num">0,244</td><td class="num">0,368</td><td class="num"><strong>0,243</strong></td></tr>
+<tr><td>nugget_full_coverage</td><td class="num">0,040</td><td class="num">0,113</td><td class="num"><strong>0,040</strong></td></tr>
 </tbody></table></div>
-<p>L'écart est trop grand pour du bruit numérique. Il vient du code ou du serveur d'inférence,
-sans qu'on puisse encore dire lequel. Conclusion opérationnelle : <strong>une comparaison
-n'est valable qu'entre runs produits dans les mêmes conditions</strong>. C'est pour cela que
-chaque run enregistre le hash de configuration <em>et</em> le commit git.</p>
+<p>L'écart mesuré le 28/09 était un artefact de l'instance Ollama CPU locale du portable (quantification et embeddings modifiés).
+Le run de recalage sur le poste GPU fixe a retrouvé <strong>exactement les chiffres d'origine au millième près</strong>
+(test apparié avec un écart nul, p = 1,0000). Conclusion opérationnelle : <strong>l'environnement d'inférence fait partie intégrante de la configuration</strong>.
+C'est pourquoi <code>ragbench</code> enregistre l'empreinte logicielle et le commit git à chaque run.</p>
+
+<h3>10.4 Benchmark des générateurs légers (&lt; 4 Go)</h3>
+<p>Sur la chaîne hybride validée (prompt <code>default</code>, température 0, 200 questions par modèle),
+nous avons évalué 6 générateurs récents exécutés sur GPU :</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Modèle</th><th class="num">Run</th><th class="num">Justesse (contains)</th><th class="num">Rejet correct</th><th class="num">Fausses abstentions</th><th class="num">Débit (s/q)</th></tr></thead>
+<tbody>
+<tr><td><strong><code>qwen3:4b-instruct</code></strong></td><td class="num"><strong>28</strong></td><td class="num"><strong>0,503</strong> [0,429 ; 0,576]</td><td class="num"><strong>1,000</strong></td><td class="num"><strong>0,429</strong></td><td class="num">1,0 s</td></tr>
+<tr><td><code>phi4-mini:3.8b</code></td><td class="num">29</td><td class="num">0,429 [0,356 ; 0,503]</td><td class="num">0,652</td><td class="num">0,525</td><td class="num">0,6 s</td></tr>
+<tr><td><code>qwen3.5:2b</code></td><td class="num">27</td><td class="num">0,362 [0,294 ; 0,429]</td><td class="num">0,783</td><td class="num">0,446</td><td class="num">1,1 s</td></tr>
+<tr><td><code>ministral-3:3b</code></td><td class="num">31</td><td class="num">0,333 [0,266 ; 0,401]</td><td class="num">0,957</td><td class="num">0,576</td><td class="num">0,7 s</td></tr>
+<tr><td><code>qwen3.5:4b</code></td><td class="num">26</td><td class="num">0,294 [0,226 ; 0,362]</td><td class="num">1,000</td><td class="num">0,689</td><td class="num">0,9 s</td></tr>
+<tr><td><code>granite4.1:3b</code></td><td class="num">30</td><td class="num">0,226 [0,169 ; 0,288]</td><td class="num">1,000</td><td class="num">0,768</td><td class="num">0,4 s</td></tr>
+</tbody></table></div>
+<p><strong>Enseignements majeurs :</strong></p>
+<ul>
+  <li><strong><code>qwen3:4b-instruct</code> est le grand vainqueur</strong> : il franchit le cap symbolique des <strong>50 % de justesse</strong>
+  (+20,9 points d'écart apparié par rapport à qwen3.5:4b, p &lt; 0,001), avec un rejet parfait des questions non répondables (1,000) et le plus faible taux de fausse abstention.</li>
+  <li><code>phi4-mini:3.8b</code> est très rapide et précis sur les questions répondables, mais hallucine sur un tiers des questions pièges (rejet à 0,652).</li>
+  <li><code>qwen3.5:4b</code> souffre d'un refus de réponse excessif (68,9 % de fausses abstentions) : face au contexte journalistique dense, il refuse fréquemment de trancher.</li>
+</ul>
 </section>
 
 <!-- ================================================================ -->
@@ -987,16 +1015,19 @@ variants:
 <tbody>
 <tr><td>Recherche hybride (RRF)</td><td><span class="pill hit">gagne</span> +0,098 de recall@3</td></tr>
 <tr><td>En-tête contextuel</td><td><span class="pill hit">gagne</span> +0,102 de justesse</td></tr>
-<tr><td>Prompt <code>decompose</code></td><td><span class="pill hit">gagne</span> +0,096 de justesse</td></tr>
+<tr><td>Prompt <code>decompose</code> (génération)</td><td><span class="pill hit">gagne</span> +0,096 de justesse</td></tr>
 <tr><td>Reranking par LLM</td><td><span class="pill">nul</span> −0,001, pour 5× le coût</td></tr>
-<tr><td>Cross-encoder MiniLM</td><td><span class="pill miss">perd</span> −0,063 sur l'hybride</td></tr>
-<tr><td>Réécriture de la requête</td><td class="muted">mesure en cours (29/09)</td></tr>
-<tr><td>Décomposition de la requête</td><td class="muted">mesure en cours — meilleur gain publié sur ce corpus</td></tr>
-<tr><td>HyDE</td><td class="muted">mesure en cours — gain attendu faible sur un corpus lexical</td></tr>
-<tr><td>Clarification (utilisateur simulé)</td><td class="muted">mesure en cours — peu de questions ambiguës dans ce corpus</td></tr>
-<tr><td>Reranker récent (Qwen3-Reranker-0.6B)</td><td class="muted">à mesurer</td></tr>
+<tr><td>Cross-encoder MiniLM (MS MARCO)</td><td><span class="pill miss">perd</span> −0,063 sur l'hybride</td></tr>
+<tr><td>Cross-encoder Qwen3-Reranker-0.6B (GPU CUDA)</td><td><span class="pill hit">gagne haut la main</span> +0,192 de recall@5 (0,512 → 0,704), faits doublés (+0,158)</td></tr>
+<tr><td>Réécriture de requête (<code>rewrite</code>)</td><td><span class="pill">à la limite</span> −0,040 [−0,074 ; −0,006], p Holm = 0,1072, latence 2,2 s (non retenu)</td></tr>
+<tr><td>Décomposition de requête (<code>decompose</code>)</td><td><span class="pill miss">perd</span> −0,071 [−0,111 ; −0,032], p Holm = 0,0032, latence 3,1 s (fragmente le multi-hop)</td></tr>
+<tr><td>HyDE (passage hypothétique)</td><td><span class="pill miss">perd</span> −0,046 [−0,081 ; −0,010], p Holm = 0,0396, latence 7,7 s (bruit halluciné)</td></tr>
+<tr><td>Clarification utilisateur simulée</td><td><span class="pill">neutre</span> +0,003, déclenché à 3 % seulement, latence 1,1 s</td></tr>
+<tr><td>Plafond par document (<code>max_per_document: 2 vs 4</code>)</td><td><span class="pill miss">4 perd</span> −0,030 de recall@5 (p Holm = 0,0008, 2 passages confirmé optimal)</td></tr>
+<tr><td>Vivier étendu seul (<code>fetch_k: 20 vs 50</code>)</td><td><span class="pill">neutre</span> +0,010 (efficace uniquement couplé à un reranker cross-encoder)</td></tr>
+<tr><td>Générateur compact recommandé (&lt; 4 Go)</td><td><span class="pill hit">champion</span> <strong>qwen3:4b-instruct</strong> (50,3 % justesse, rejet négatif 1,000)</td></tr>
 <tr><td>Filtrage par métadonnées</td><td class="muted">à mesurer — clé contre les documents proches</td></tr>
-<tr><td>Graphe de connaissance (HippoRAG 2)</td><td class="muted">à mesurer — coûteux à indexer sur CPU</td></tr>
+<tr><td>Graphe de connaissances (HippoRAG 2)</td><td class="muted">à mesurer — nécessite indexation des entités</td></tr>
 </tbody></table></div>
 </section>
 
@@ -1055,15 +1086,19 @@ p = 0,51. Un collègue conclut « le reranker dégrade légèrement le dense ».
 concluant sur 177 questions ». Pour trancher, il faudrait plus de questions (le <em>pool</em>).</p></details>
 
 <h4>Exercice 4 — concevoir une ablation</h4>
-<p>On soupçonne que le plafond de 2 passages par article explique que les faits plafonnent à
-63 %. Proposez une expérience qui isole ce facteur, la commande à lancer, et le résultat qui
+<p>On soupçonne que le plafond de 2 passages par article explique que les faits plafonnent.
+Proposez une expérience qui isole ce facteur, la commande à lancer, et le résultat qui
 confirmerait l'hypothèse.</p>
 <details><summary>Solution</summary>
 <p>Deux variantes identiques sauf <code>max_per_document</code> (2 contre 4, par exemple), même
 index, même vivier. Comparer <code>nugget_recall</code> et <code>nugget_full_coverage</code> à
 k = 5, 10, 20 avec <code>ragbench diagnose compare A.yml B.yml</code>. Hypothèse confirmée si
 la couverture des faits monte significativement (après Holm) sans que le recall d'articles
-chute — sinon, le coupable est plutôt le critère lexical.</p></details>
+chute — sinon, le coupable est plutôt le critère lexical.</p>
+<p><em>Résultat réel mesuré lors de la campagne GPU</em> (<code>configs/experiments/ablations.yml</code>) :
+passer le plafond à 4 dégrade significativement <code>doc_recall@5</code> de <strong>−0,030</strong>
+[−0,046 ; −0,015] (p Holm = 0,0008). Les passages additionnels d'un même article monopolisent les rangs utiles
+du top-k et évincent les sources secondaires indispensables au multi-hop. Le plafond de 2 passages est validé.</p></details>
 
 <h4>Exercice 5 — piège de métrique</h4>
 <p>Le prompt <code>cited</code> fait monter <code>contains</code> mais tomber l'exact match à 0.
@@ -1124,18 +1159,20 @@ const CURVE = {
   ks: [5, 10, 20, 30, 50],
   series: [
     { key: "doc_recall", label: "Articles de référence", color: "--s1",
-      mean: [0.567, 0.710, 0.871, 0.931, 0.956], lo: [0.520, 0.669, 0.840, 0.906, 0.935], hi: [0.615, 0.752, 0.901, 0.955, 0.976] },
+      mean: [0.400, 0.508, 0.649, 0.719, 0.820], lo: [0.354, 0.461, 0.600, 0.672, 0.778], hi: [0.448, 0.556, 0.698, 0.765, 0.860] },
     { key: "nugget_recall", label: "Faits couverts", color: "--s2",
-      mean: [0.368, 0.455, 0.553, 0.612, 0.630], lo: [0.321, 0.406, 0.507, 0.565, 0.583], hi: [0.415, 0.503, 0.599, 0.658, 0.675] },
+      mean: [0.250, 0.317, 0.420, 0.456, 0.530], lo: [0.207, 0.271, 0.371, 0.406, 0.480], hi: [0.292, 0.362, 0.466, 0.504, 0.577] },
     { key: "nugget_full_coverage", label: "Tous les faits", color: "--s3",
-      mean: [0.113, 0.181, 0.237, 0.294, 0.322], lo: [0.068, 0.124, 0.175, 0.226, 0.254], hi: [0.164, 0.237, 0.299, 0.362, 0.390] },
+      mean: [0.045, 0.079, 0.141, 0.158, 0.209], lo: [0.017, 0.040, 0.090, 0.107, 0.153], hi: [0.079, 0.119, 0.192, 0.215, 0.266] },
   ],
 };
 const RERANK = [
-  { stage: "Dense", metric: "Articles @5", a: 0.567, b: 0.552, d: -0.015, lo: -0.057, hi: 0.027, p: 0.5125, holm: 1.0, verdict: "non concluant" },
-  { stage: "Dense", metric: "Tous les faits @5", a: 0.113, b: 0.079, d: -0.034, lo: -0.085, hi: 0.017, p: 0.3099, holm: 1.0, verdict: "non concluant" },
-  { stage: "Hybride", metric: "Articles @5", a: 0.619, b: 0.556, d: -0.063, lo: -0.111, hi: -0.016, p: 0.0130, holm: 0.0260, verdict: "moins bon" },
-  { stage: "Hybride", metric: "Tous les faits @5", a: 0.164, b: 0.056, d: -0.107, lo: -0.164, hi: -0.051, p: 0.0008, holm: 0.0024, verdict: "moins bon" },
+  { stage: "Dense + MiniLM", metric: "Articles @5", a: 0.567, b: 0.552, d: -0.015, lo: -0.057, hi: 0.027, p: 0.5125, holm: 1.0, verdict: "non concluant" },
+  { stage: "Dense + MiniLM", metric: "Tous les faits @5", a: 0.113, b: 0.079, d: -0.034, lo: -0.085, hi: 0.017, p: 0.3099, holm: 1.0, verdict: "non concluant" },
+  { stage: "Hybride + MiniLM", metric: "Articles @5", a: 0.619, b: 0.556, d: -0.063, lo: -0.111, hi: -0.016, p: 0.0130, holm: 0.0260, verdict: "moins bon" },
+  { stage: "Hybride + MiniLM", metric: "Tous les faits @5", a: 0.164, b: 0.056, d: -0.107, lo: -0.164, hi: -0.051, p: 0.0008, holm: 0.0024, verdict: "moins bon" },
+  { stage: "Hybride + Qwen3 (GPU)", metric: "Articles @5", a: 0.512, b: 0.704, d: 0.192, lo: 0.148, hi: 0.239, p: 0.0008, holm: 0.0008, verdict: "meilleur" },
+  { stage: "Hybride + Qwen3 (GPU)", metric: "Tous les faits @5", a: 0.113, b: 0.271, d: 0.158, lo: 0.102, hi: 0.220, p: 0.0008, holm: 0.0008, verdict: "meilleur" },
 ];
 const JUDGES = [
   { name: "llama3.2:3b (1 an)", k: 0.458 },
@@ -1498,21 +1535,21 @@ function drawCurve() {
 /* ------------------------------------------------------------------ */
 function drawRerank() {
   const host = $("#chart-rerank"); host.replaceChildren();
-  host.appendChild(el("div", { style: "font-weight:600;font-size:14px" }, "Écart apporté par le cross-encoder MiniLM (avec − sans), IC 95 %"));
+  host.appendChild(el("div", { style: "font-weight:600;font-size:14px" }, "Écarts apportés par les rerankers (avec − sans), IC 95 %"));
   const W = widthOf(host), narrow = W < 560;
   const rowH = narrow ? 60 : 46, m = narrow ? { l: 14, r: 14, t: 14, b: 34 } : { l: 210, r: 150, t: 14, b: 34 };
   const H = m.t + m.b + rowH * RERANK.length;
-  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Écarts du reranker : non concluants sur le dense, négatifs et significatifs sur l'hybride." });
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Écarts des rerankers : MiniLM dégrade l'hybride, Qwen3-Reranker apporte un gain massif et significatif." });
   host.appendChild(svg);
-  const lo = -0.2, hi = 0.1;
+  const lo = -0.2, hi = 0.25;
   const x = (v) => m.l + (v - lo) / (hi - lo) * (W - m.l - m.r);
-  for (const v of (narrow ? [-0.2, -0.1, 0, 0.1] : [-0.2, -0.15, -0.1, -0.05, 0, 0.05, 0.1])) {
+  for (const v of (narrow ? [-0.2, -0.1, 0, 0.1, 0.2] : [-0.2, -0.15, -0.1, -0.05, 0, 0.05, 0.1, 0.15, 0.2])) {
     svgEl("line", { x1: x(v), x2: x(v), y1: m.t, y2: H - m.b, stroke: v === 0 ? css("--ink-2") : css("--grid"), "stroke-width": 1 }, svg);
     svgText(svg, x(v), H - m.b + 18, (v > 0 ? "+" : "") + fmt(v, 2), { "text-anchor": "middle" });
   }
   svgText(svg, x(0), H - 2, "← le reranker dégrade · améliore →", { "text-anchor": "middle" });
-  const col = css("--s1");
   RERANK.forEach((r, i) => {
+    const col = r.verdict === "meilleur" ? css("--good") : r.verdict === "moins bon" ? css("--bad") : css("--s1");
     const cy = m.t + rowH * i + (narrow ? rowH - 16 : rowH / 2);
     if (narrow) {
       svgText(svg, m.l, cy - 18, `${r.stage} — ${r.metric} : ${sgn(r.d)}, ${r.verdict}`, { fill: css("--ink") });
@@ -1522,7 +1559,7 @@ function drawRerank() {
     }
     svgEl("line", { x1: x(r.lo), x2: x(r.hi), y1: cy, y2: cy, stroke: col, "stroke-width": 2, "stroke-linecap": "round" }, svg);
     svgEl("circle", { cx: x(r.d), cy, r: 5, fill: col, stroke: css("--surface"), "stroke-width": 2 }, svg);
-    if (!narrow) svgText(svg, W - m.r + 12, cy + 4, `${sgn(r.d)} · ${r.verdict}`, { fill: css("--ink-2") });
+    if (!narrow) svgText(svg, W - m.r + 12, cy + 4, `${sgn(r.d)} · ${r.verdict}`, { fill: col, "font-weight": r.verdict === "meilleur" ? 600 : 400 });
     const hitR = svgEl("rect", { x: m.l, y: cy - (narrow ? rowH - 16 : rowH / 2), width: W - m.l - m.r, height: rowH, fill: "transparent", tabindex: 0 }, svg);
     const show = () => {
       const scale = svg.getBoundingClientRect().width / W;
