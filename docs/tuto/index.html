@@ -531,6 +531,81 @@ de la baseline. Remède : un vivier plus large.</div>
   fetch_k: 50            # 50 candidats reclassés, 5 gardés</code></pre>
 <p>Le reranking est-il utile ? On ne le suppose pas, on le mesure — réponse au chapitre 10,
 et elle surprend.</p>
+
+<h3>5.5 Travailler la requête avant de chercher</h3>
+<p>Une question d'utilisateur n'est pas une bonne requête de recherche : trop longue, pleine
+de tournures (« Was there no change in the portrayal of… »), et en multi-hop elle mélange
+plusieurs besoins. Trois techniques demandent au LLM de la retravailler <em>avant</em> la
+recherche. Chacune coûte un appel LLM court par question.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Technique</th><th>Ce que fait le LLM</th><th>Ce qu'on cherche ensuite</th></tr></thead>
+<tbody>
+<tr><td><strong>Réécriture</strong> (<code>query_rewrite</code>)</td><td>Condense la question en requête : garde noms propres, sources, dates</td><td>La requête réécrite, à la place de la question</td></tr>
+<tr><td><strong>Décomposition</strong> (<code>query_decompose</code>)</td><td>Découpe la question en 3 sous-requêtes au plus, une par fait ou par article</td><td>Chaque sous-requête <em>et</em> la question d'origine ; les classements sont fusionnés par RRF</td></tr>
+<tr><td><strong>HyDE</strong> (<code>hyde</code>)</td><td>Rédige un faux article qui répondrait à la question</td><td>Ce passage, vectorisé comme un document, pour la partie dense ; le lexical garde la question</td></tr>
+</tbody></table></div>
+<p>Sorties réelles de <code>qwen3.5:4b</code> sur une question du banc (« Sporting News… bettors…
+favored Eagles… September 28 and December 18, 2023 ») :</p>
+<pre><code>réécriture    Sporting News bettors evaluation betting opportunities offers reading
+              requirements favored Eagles hype reports September 28 2023 December 18 2023
+décomposition 1. Sporting News advice to bettors evaluation of betting opportunities
+              2. Going with favored Eagles Sporting News bets
+              3. Hype between reports published September 28 2023 and December 18 2023
+HyDE          « Sporting News recently clarified that its betting guidance for evaluating
+              opportunities strictly requires readers to analyze historical data… »</code></pre>
+<p>Pourquoi garder la question d'origine dans la fusion de la décomposition ? Parce qu'une
+décomposition peut rater : sur une autre question, le même modèle n'a produit
+<strong>qu'une</strong> sous-requête, qui recopiait toute la question. Fusionner avec
+l'original borne les dégâts : une mauvaise décomposition dégrade, elle ne détruit pas.</p>
+<p>HyDE parie sur l'inverse de la réécriture : au lieu de rapprocher la question des mots
+exacts, il la rapproche du <em>style</em> des documents. L'état de l'art le trouve utile
+quand question et documents emploient des vocabulaires différents, et nuisible quand ils sont
+déjà alignés — ce qui est le cas de MultiHop-RAG, très lexical. À mesurer, donc.</p>
+<div class="callout warn"><strong>Le piège du modèle qui réfléchit</strong>
+Ces appels ont un petit budget (64 à 200 tokens). Sur un modèle à raisonnement, le budget
+part dans la réflexion, le texte revient vide, et la technique retombe sur la question
+d'origine : elle coûte un appel sans rien changer, sans aucune erreur. Le banc impose donc
+<code>thinking=False</code> et <strong>compte chaque repli</strong> — une technique en panne
+ne doit jamais passer pour une technique inutile. Ce bug existait dans la réécriture
+d'origine ; il a été trouvé en écrivant ce chapitre.</div>
+
+<h3>5.6 Demander une précision à l'utilisateur</h3>
+<p>Quand la question est ambiguë — deux articles Sporting News parlent de Connor Bedard,
+lequel est visé ? — la meilleure technique est parfois de <strong>demander</strong>. Le banc
+l'implémente ainsi (<code>clarify</code>) :</p>
+<ol class="steps">
+  <li>Première recherche avec la question telle quelle.</li>
+  <li>Le générateur lit la source, la date et le titre des candidats. Si la question est claire,
+  il répond <code>NONE</code> ; sinon il pose <strong>une</strong> question de précision.</li>
+  <li>L'utilisateur répond.</li>
+  <li>Seconde recherche avec la question enrichie de la réponse, fusionnée par RRF avec la première.</li>
+</ol>
+<h4>Comment évaluer une technique interactive ?</h4>
+<p>Sur 200 questions, impossible de faire répondre un humain à chaque fois. On le remplace par
+un <strong>utilisateur simulé</strong> : un LLM qui joue l'auteur de la question. Tout le
+sérieux de la mesure tient à ce qu'on lui donne.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>L'utilisateur simulé sait</th><th>Il ne sait pas</th></tr></thead>
+<tbody>
+<tr><td>Quels articles il a en tête : source, date, titre (tirés de la vérité terrain) — exactement ce qu'un vrai utilisateur sait de sa propre intention</td><td>La réponse, ni les faits. La consigne lui interdit de répondre à sa propre question</td></tr>
+</tbody></table></div>
+<p>Trois précautions de méthode :</p>
+<ul>
+  <li><strong>Borne haute.</strong> Un vrai utilisateur ne connaît pas toujours le titre exact
+  de l'article qu'il cherche ; le simulé, si. Le gain mesuré est un maximum, pas une
+  prévision.</li>
+  <li><strong>Le simulé fait partie de la règle.</strong> C'est le juge (<code>llama3.2:3b</code>),
+  pas le générateur, et il ne change pas quand les techniques changent.</li>
+  <li><strong>Gain et friction, ensemble.</strong> On publie le <em>taux de questions posées</em> :
+  un système qui demande une précision à chaque question agace, même s'il gagne quelques
+  points. Deux tours de conversation coûtent aussi du temps.</li>
+</ul>
+<div class="callout"><strong>Le bon jeu de données pour cette technique</strong>
+Les questions de MultiHop-RAG sont très explicites (« as reported by The Verge on November 1,
+2023 ») : on s'attend à peu de clarifications utiles, et c'est un résultat en soi. Pour juger
+vraiment la clarification, il faut des questions <em>réellement</em> ambiguës — c'est l'objet
+de jeux comme AmbigQA ou ClariQ, ou des questions pièges entre documents voisins que le mode
+aperçu doit générer (chapitre 12).</div>
 </section>
 
 <!-- ================================================================ -->
@@ -915,7 +990,10 @@ variants:
 <tr><td>Prompt <code>decompose</code></td><td><span class="pill hit">gagne</span> +0,096 de justesse</td></tr>
 <tr><td>Reranking par LLM</td><td><span class="pill">nul</span> −0,001, pour 5× le coût</td></tr>
 <tr><td>Cross-encoder MiniLM</td><td><span class="pill miss">perd</span> −0,063 sur l'hybride</td></tr>
-<tr><td>Décomposition de la requête</td><td class="muted">à mesurer — meilleur gain publié sur ce corpus</td></tr>
+<tr><td>Réécriture de la requête</td><td class="muted">mesure en cours (29/09)</td></tr>
+<tr><td>Décomposition de la requête</td><td class="muted">mesure en cours — meilleur gain publié sur ce corpus</td></tr>
+<tr><td>HyDE</td><td class="muted">mesure en cours — gain attendu faible sur un corpus lexical</td></tr>
+<tr><td>Clarification (utilisateur simulé)</td><td class="muted">mesure en cours — peu de questions ambiguës dans ce corpus</td></tr>
 <tr><td>Reranker récent (Qwen3-Reranker-0.6B)</td><td class="muted">à mesurer</td></tr>
 <tr><td>Filtrage par métadonnées</td><td class="muted">à mesurer — clé contre les documents proches</td></tr>
 <tr><td>Graphe de connaissance (HippoRAG 2)</td><td class="muted">à mesurer — coûteux à indexer sur CPU</td></tr>
