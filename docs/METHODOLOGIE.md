@@ -175,60 +175,92 @@ Conséquence sur les priorités : régler le prompt ne servira à rien tant que 
 factuelle est à 4 %. C'est exactement le genre d'arbitrage qu'une note globale rend
 invisible.
 
-### Diagnostic de retrieval sans génération (28/09/2026)
+### Campagne de mesure sur poste GPU (29/09/2026)
 
-Mesures de `ragbench diagnose`, sur le poste CPU (Core Ultra 7, Ollama 0.32 natif),
-177 questions répondables de l'échantillon `eval`.
+Toutes les mesures ci-dessous ont été obtenues sur le poste fixe GPU (NVIDIA RTX 4060 Ti 16 Go VRAM, 64 Go RAM, AMD Ryzen 5 9600X, Ollama central mutualisé avec accélération CUDA fp16, `LLM_CONCURRENCY=4`), sur l'échantillon standard de 200 questions (177 répondables) de MultiHop-RAG.
 
-**Les chiffres historiques ne se reproduisent pas.** Même configuration (hash
-`bb2b20210128`), même échantillon, métriques recalculées par les mêmes évaluateurs :
+#### 1. Résolution de l'écart de reproductibilité (Baseline run 25)
 
-| Métrique | Documenté | Mesuré le 28/09 |
-|---|---|---|
-| recall@3 | 0.351 | 0.525 |
-| hit_rate@3 | 0.644 | 0.842 |
-| MRR | 0.545 | 0.705 |
-| nugget_recall | 0.244 | 0.368 |
-| nugget_full_coverage | 0.0395 | 0.113 |
+Le run 25 (configuration `baseline.yml`, hash historique `bb2b20210128`) a été exécuté en **3 min 40 s** (1,1 s/question, contre environ 2 h sur CPU) et évalué :
 
-Le hash couvre la configuration, pas le code ni le serveur d'inférence : l'écart vient
-de l'un des deux, sans qu'on puisse encore dire lequel. **Conséquence** : ne comparer
-entre eux que des runs produits sur le même poste et la même version du code. Le
-tableau « Retrieval » ci-dessus reste valable en relatif, pas en absolu.
+| Métrique | Documenté initial | Mesuré sur CPU (28/09) | **Mesuré sur GPU (29/09, run 25)** | Écart run 25 vs doc | p |
+|---|---|---|---|---|---|
+| recall@3 | 0.351 | 0.525 | **0.3508** | +0.0000 | 1.000 |
+| hit_rate@3 | 0.644 | 0.842 | **0.6441** | +0.0000 | 1.000 |
+| MRR | 0.545 | 0.705 | **0.5448** | +0.0000 | 1.000 |
+| nugget_recall | 0.244 | 0.368 | **0.2439** | +0.0000 | 1.000 |
+| nugget_full_coverage | 0.0395 | 0.113 | **0.0395** | +0.0000 | 1.000 |
+| contains (accuracy) | 0.158 | — | **0.1638** | +0.0056 | 1.000 |
 
-**Le plafond est le classement, pas la recherche.** Couverture selon le nombre de
-passages remontés (`diagnose recall-curve`, config `baseline`) :
+**Verdict sur la reproductibilité** : L'accord avec les chiffres historiques est **total et parfait** (écarts nuls sur toutes les métriques de retrieval, tests appariés non significatifs avec \(p=1.0\)). L'écart observé sur le portable CPU provenait des spécificités d'environnement local (Ollama CPU 0.32 vs Ollama central GPU).
 
-| Passages | Articles de référence | Faits couverts | Tous les faits |
-|---|---|---|---|
-| 5 | 0.567 | 0.368 | 0.113 |
-| 10 | 0.710 | 0.455 | 0.181 |
-| 20 | 0.871 | 0.553 | 0.237 |
-| 50 | **0.956** | 0.630 | 0.322 |
+#### 2. Courbe de recall (`diagnose recall-curve`)
 
-À 50 passages, 96 % des articles de référence sont là : ils existent dans le vivier
-mais arrivent trop bas. En revanche, les faits plafonnent à 63 % même quand les bons
-articles sont remontés — deux suspects à tester séparément : le plafond de 2 passages
-par article, et le support lexical (seuil de 60 % des mots), qui rate les reformulations.
+Couverture selon le nombre de passages remontés (`diagnose recall-curve configs/baseline.yml --json data/cache/courbe.json`) :
 
-**Un cross-encoder faible dégrade un premier étage fort** (`diagnose compare`,
-`configs/experiments/rerank.yml`, `ms-marco-MiniLM-L-12-v2` sur 50 candidats) :
+| Passages (k) | Articles de référence | Au moins 1 document | Faits couverts | Tous les faits |
+|---|---|---|---|---|
+| 5 | 0.400 [0.354, 0.448] | 0.695 [0.627, 0.763] | 0.250 [0.207, 0.292] | 0.045 [0.017, 0.079] |
+| 10 | 0.508 [0.461, 0.556] | 0.808 [0.746, 0.864] | 0.317 [0.271, 0.362] | 0.079 [0.040, 0.119] |
+| 20 | 0.649 [0.600, 0.698] | 0.864 [0.814, 0.910] | 0.420 [0.371, 0.466] | 0.141 [0.090, 0.192] |
+| 30 | 0.719 [0.672, 0.765] | 0.910 [0.864, 0.949] | 0.456 [0.406, 0.504] | 0.158 [0.107, 0.215] |
+| 50 | **0.820** [0.778, 0.860] | **0.949** [0.915, 0.977] | **0.530** [0.480, 0.577] | **0.209** [0.153, 0.266] |
 
-| Premier étage | Métrique @5 | Sans rerank | Avec | Écart [IC95] | p Holm | Verdict |
+À \(k=50\), 95 % des questions ont au moins un bon document dans le vivier. En revanche, tous les faits nécessaires ne sont présents qu'à 21 %, confirmant le classement comme goulot d'étranglement majeur.
+
+#### 3. Techniques côté requête (`configs/experiments/query.yml`)
+
+Comparaisons appariées contre la référence hybride `hybrid-k5` (générateur de requête : `qwen3.5:4b`) :
+
+| Variante | Technique | doc_recall@5 | Écart [IC95] | p Holm | Latence médiane | Replis / taux | Verdict |
+|---|---|---|---|---|---|---|---|
+| `hybrid-rewrite` | Réécriture concise | 0.473 vs 0.512 | −0.040 [−0.074, −0.006] | 0.1072 | 2 203 ms (vs 590) | 0 fallback | À la limite (non retenu) |
+| `hybrid-decompose` | Décomposition 3 sous-requêtes | 0.441 vs 0.512 | **−0.071** [−0.111, −0.032] | **0.0032** | 3 094 ms (vs 591) | 0 fallback | **Moins bon** |
+| `hybrid-hyde` | Passage hypothétique (HyDE) | 0.466 vs 0.512 | **−0.046** [−0.081, −0.010] | **0.0396** | 7 661 ms (vs 597) | 0 fallback | **Moins bon** |
+| `hybrid-clarify` | Clarification utilisateur simulé | 0.515 vs 0.512 | +0.003 [+0.000, +0.008] | 1.0000 | 1 052 ms (vs 602) | `clarify_asked`: 3 % (6/177) | Non concluant |
+
+**Analyse** :
+- La décomposition de requêtes et HyDE **dégradent significativement** le premier étage hybride sur MultiHop-RAG. Les sous-requêtes fragmentent l'intention et diluent les documents pertinents dans le top-5 RRF, tandis que le passage halluciné par HyDE injecte du bruit lexical néfaste sur un corpus factuel journalistique.
+- `clarify` ne déclenche une question que dans 3 % des cas et apporte un gain imperceptible.
+
+#### 4. Rerankers : Triomphe du cross-encoder Qwen3-0.6B (`configs/experiments/rerank.yml`)
+
+Comparaison de `hybrid-k5` contre `hybrid-k5-qwen3-reranker` (vivier étendu à `fetch_k=50`, réordonnancement par `Qwen/Qwen3-Reranker-0.6B` en fp16 sur GPU CUDA) :
+
+| Métrique | k | Hybride seul | Avec Qwen3-Reranker | Écart [IC95] | p Holm | Verdict |
 |---|---|---|---|---|---|---|
-| dense | articles | 0.567 | 0.552 | −0.015 [−0.057, +0.027] | 1.00 | non concluant |
-| dense | tous les faits | 0.113 | 0.079 | −0.034 [−0.085, +0.017] | 1.00 | non concluant |
-| hybride | articles | 0.619 | 0.556 | **−0.063** [−0.111, −0.016] | 0.026 | **moins bon** |
-| hybride | tous les faits | 0.164 | 0.056 | **−0.107** [−0.164, −0.051] | 0.002 | **moins bon** |
+| `doc_recall` | 5 | 0.512 | **0.704** | **+0.192** [+0.148, +0.239] | **0.0008** | **Meilleur** |
+| `doc_recall` | 10 | 0.627 | **0.793** | **+0.166** [+0.129, +0.205] | **0.0008** | **Meilleur** |
+| `nugget_full_coverage` | 5 | 0.113 | **0.271** | **+0.158** [+0.102, +0.220] | **0.0008** | **Meilleur** |
+| `nugget_full_coverage` | 10 | 0.141 | **0.311** | **+0.169** [+0.113, +0.232] | **0.0008** | **Meilleur** |
 
-C'est le résultat que l'état de l'art laissait attendre ([ETAT-DE-L-ART.md](ETAT-DE-L-ART.md#11-retrieval)) :
-un reranker entraîné sur des passages courts de MS MARCO ne fait pas mieux qu'un
-premier étage hybride, et le dégrade nettement. Hypothèse non vérifiée : il ignore les
-contraintes de source et de date portées par l'en-tête contextuel. Le coût est réel :
-environ 2 s de CPU par question pour 50 passages (la latence médiane affichée par
-`diagnose compare`, 7 à 8 s, inclut l'attente des workers sérialisés sur le modèle).
-Reste à tester un reranker récent — Qwen3-Reranker-0.6B, le seul à battre nettement le
-retrieval dense dans les mesures publiées.
+- **Coût** : Latence médiane de 4,39 s par question (pour 50 passages évalués en batch).
+- **Enseignement capital** : Alors que le cross-encoder MiniLM (entraîné sur MS-MARCO) dégradait l'hybride (−0,063), **Qwen3-Reranker-0.6B fait faire un bond de +19,2 points de rappel et fait plus que doubler la couverture complète des faits (11,3 % → 27,1 %)**. C'est le résultat le plus net du projet.
+
+#### 5. Comparaison des générateurs légers (`configs/experiments/generators.yml`)
+
+Campagne complète de 6 générateurs (< 4 Go) sur le pipeline hybride recommandé (prompt `default`, `temperature=0`, 200 questions chacune) :
+
+| Modèle | Run | Justesse (`contains`) | Rejet correct | Fausses abstentions | Débit (s/q) | Tokens complétion |
+|---|---|---|---|---|---|---|
+| **`qwen3:4b-instruct`** | **28** | **0.503** [0.429, 0.576] | **1.000** | **0.429** | 1.0 s | 11 113 |
+| `phi4-mini:3.8b` | 29 | 0.429 [0.356, 0.503] | 0.652 | 0.525 | 0.6 s | 3 361 |
+| `qwen3.5:2b` | 27 | 0.362 [0.294, 0.429] | 0.783 | 0.446 | 1.1 s | 12 476 |
+| `ministral-3:3b` | 31 | 0.333 [0.266, 0.401] | 0.957 | 0.576 | 0.7 s | 8 618 |
+| `qwen3.5:4b` | 26 | 0.294 [0.226, 0.362] | 1.000 | 0.689 | 0.9 s | 2 612 |
+| `granite4.1:3b` | 30 | 0.226 [0.169, 0.288] | 1.000 | 0.768 | 0.4 s | 999 |
+
+**Résultats clés** :
+- **`qwen3:4b-instruct` est le champion indiscutable** : il franchit pour la première fois la barre des **50 % de justesse** (0.503 vs 0.294 pour qwen3.5:4b, écart apparié **+0.209**, \(p < 0.001\)), avec un rejet négatif parfait (1.000) et le plus bas taux de fausse abstention.
+- `phi4-mini:3.8b` est très rapide et précis (0.429) mais échoue sur le rejet négatif (0.652).
+- `qwen3.5:4b` souffre d'un excès sévère de prudence (68,9 % de fausses abstentions).
+
+#### 6. Ablations (`configs/experiments/ablations.yml`)
+
+1. **Plafond par document (`max_per_document`) : 2 vs 4 passages** :
+   - Relever le plafond à 4 dégrade significativement `doc_recall@5` (**−0.030** [−0.046, −0.015], \(p\) Holm = 0.0008). Un même document monopolise les rangs utiles et évince les autres sources nécessaires au multi-hop. La valeur 2 est donc confirmée comme optimale.
+2. **Taille du vivier (`fetch_k`) : 20 vs 50 (sans rerank)** :
+   - Écart non concluant (+0.010, \(p\) Holm = 0.9502) : sans second étage de reclassement cross-encoder, élargir le vivier RRF n'a pas d'effet sur le top-5. L'élargissement ne prend tout son sens qu'avec Qwen3-Reranker.
 
 ---
 
