@@ -42,6 +42,7 @@ from ..settings import Settings
 from ..settings import settings as default_settings
 from ..stats import Comparison, Interval, bootstrap_ci, holm, paired_bootstrap
 from .campaign import load_questions
+from .simulated_user import load_document_meta, simulated_user
 
 DEFAULT_KS: tuple[int, ...] = (5, 10, 20, 30, 50)
 
@@ -229,6 +230,19 @@ async def recall_curve(
             index = await ensure_index(
                 conn, llm, cfg, dataset_id=dataset["id"], progress=on_index_progress
             )
+            meta = (
+                load_document_meta(
+                    conn,
+                    [
+                        ev["document_external_id"]
+                        for q in load_questions(conn, dataset["id"], split=split, limit=limit)
+                        for ev in (q.get("gold_evidence") or [])
+                        if ev.get("document_external_id")
+                    ],
+                )
+                if cfg.retrieval.clarify
+                else {}
+            )
             questions = [
                 q
                 for q in load_questions(conn, dataset["id"], split=split, limit=limit)
@@ -257,8 +271,17 @@ async def recall_curve(
                     except asyncio.QueueEmpty:
                         break
                     try:
+                        user = (
+                            simulated_user(
+                                llm, tuned, question=q["question"],
+                                gold_evidence=q["gold_evidence"], meta=meta,
+                            )
+                            if tuned.retrieval.clarify
+                            else None
+                        )
                         result = await retrieve(
-                            wconn, llm, tuned, index_id=index.index_id, question=q["question"]
+                            wconn, llm, tuned, index_id=index.index_id,
+                            question=q["question"], user=user,
                         )
                         row = question_curve(
                             [c.as_dict() for c in result.contexts],
@@ -270,7 +293,7 @@ async def recall_curve(
                             per_question[q["id"]] = row
                             latencies.append(result.elapsed_ms)
                             for key, value in result.debug.items():
-                                if key.endswith("_fallback") and value:
+                                if key.endswith(("_fallback", "_asked")) and value is True:
                                     fallbacks[key] = fallbacks.get(key, 0) + 1
                     except Exception:  # noqa: BLE001
                         # Comptee, jamais avalee : un diagnostic calcule sur

@@ -15,7 +15,7 @@ import psycopg
 from ..config import PipelineConfig
 from ..llm import LLMClient
 from .generate import GenerationResult, generate
-from .retrieve import Context, retrieve
+from .retrieve import Context, UserReply, retrieve
 
 
 @dataclass
@@ -52,6 +52,7 @@ async def answer(
     *,
     index_id: int,
     question: str,
+    user: UserReply | None = None,
 ) -> RagAnswer:
     # Le temoin closed-book saute entierement le retrieval : c'est le point
     # de comparaison qui dit si le RAG apporte quelque chose.
@@ -69,7 +70,7 @@ async def answer(
             error=gen.error,
         )
 
-    retrieval = await retrieve(conn, llm, cfg, index_id=index_id, question=question)
+    retrieval = await retrieve(conn, llm, cfg, index_id=index_id, question=question, user=user)
     gen = await generate(llm, cfg, question=question, contexts=retrieval.contexts)
 
     return RagAnswer(

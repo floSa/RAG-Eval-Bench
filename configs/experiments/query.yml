@@ -62,3 +62,12 @@ variants:
       Passage hypothetique redige par le generateur, vectorise a la place de
       la question pour la composante dense ; le lexical garde la question.
     retrieval: {hyde: true}
+
+  - name: hybrid-clarify
+    description: >
+      Apres la premiere recherche, le generateur peut poser une question de
+      precision ; un utilisateur simule (le juge, qui connait les articles
+      vises mais pas la reponse) repond, et la recherche est refaite avec
+      cette reponse. Gain mesure = borne haute (utilisateur « oracle » sur
+      l'intention). Rapporte aussi le taux de questions posees.
+    retrieval: {clarify: true}

@@ -462,10 +462,16 @@ def diagnose_compare(
             f"retrieval median {r.median_retrieval_ms or 0:.0f} ms"
         )
         for key, count in sorted(r.fallbacks.items()):
-            console.print(
-                f"[yellow]! {label} : {key} sur {count}/{r.n_questions} questions — "
-                "la technique est retombee sur la question d'origine[/]"
-            )
+            if key.endswith("_asked"):
+                console.print(
+                    f"  {label} : {key} sur {count}/{r.n_questions} questions "
+                    f"({count / max(1, r.n_questions):.0%})"
+                )
+            else:
+                console.print(
+                    f"[yellow]! {label} : {key} sur {count}/{r.n_questions} questions — "
+                    "la technique est retombee sur la question d'origine[/]"
+                )
 
     table = Table("Metrique", "k", "A", "B", "Ecart B-A [IC95]", "p", "p Holm", "Verdict")
     for row in compare_curves(a, b, ks=k_values):

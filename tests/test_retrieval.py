@@ -137,3 +137,53 @@ class TestSousRequetes:
         from ragbench.rag.retrieve import parse_sub_queries
 
         assert parse_sub_queries("", 3) == []
+
+
+class TestClarification:
+    def test_none_et_reponse_sans_question(self):
+        from ragbench.rag.retrieve import wants_clarification
+
+        assert not wants_clarification("NONE")
+        assert not wants_clarification("none.")
+        assert not wants_clarification("")
+        # Sans point d'interrogation, ce n'est pas une question posee.
+        assert not wants_clarification("The question is clear.")
+        assert wants_clarification("Which Sporting News article do you mean, the NFL or NHL one?")
+
+    def test_candidats_lus_dans_l_en_tete(self):
+        from ragbench.rag.retrieve import Context, candidate_lines
+
+        text = "Title: Bedard's debut\nSource: Sporting News\nPublished: 2023-10-11T00:00\n\ncorps"
+        ctxs = [
+            Context(1, 1, "a", text, 0.9, 1),
+            Context(2, 1, "a", text, 0.8, 2),  # meme document : une seule ligne
+        ]
+        assert candidate_lines(ctxs) == "- Sporting News, 2023-10-11: Bedard's debut"
+
+    def test_sans_utilisateur_refuse(self):
+        """Une clarification sans personne pour repondre serait un no-op."""
+        import asyncio
+
+        import pytest
+
+        from ragbench.config import PipelineConfig, RetrievalConfig
+        from ragbench.rag.retrieve import retrieve
+
+        cfg = PipelineConfig(name="c", retrieval=RetrievalConfig(clarify=True))
+        with pytest.raises(ValueError, match="utilisateur"):
+            asyncio.run(retrieve(None, None, cfg, index_id=1, question="q"))
+
+
+def test_utilisateur_simule_ne_voit_que_les_articles():
+    """Il connait source, date et titre — jamais la reponse ni les faits."""
+    from ragbench.runner.simulated_user import describe_articles
+
+    gold = [
+        {"document_external_id": "u1", "fact": "Will Lutz buries his fourth field goal"},
+        {"document_external_id": "u1", "fact": "autre fait"},
+    ]
+    meta = {"u1": {"title": "Vikings vs. Broncos", "source": "Sporting News",
+                   "published_at": "2023-11-19T23:00:04+00:00"}}
+    text = describe_articles(gold, meta)
+    assert text == "- Sporting News, 2023-11-19: Vikings vs. Broncos"
+    assert "Lutz" not in text

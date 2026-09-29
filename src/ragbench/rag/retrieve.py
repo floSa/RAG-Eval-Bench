@@ -12,6 +12,7 @@ import asyncio
 import re
 import threading
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -381,6 +382,23 @@ details if needed. Reply with the passage only.
 Question: {question}
 Passage:"""
 
+_CLARIFY_PROMPT = """A user asked a search assistant the question below. These are the
+articles the first search found (source, date, title):
+{candidates}
+
+If the question clearly identifies which articles are needed, reply exactly: NONE
+Otherwise, ask the user ONE short clarifying question that would help pick the
+right articles (for example which source, date or event they mean).
+Reply with NONE or with the question only.
+
+Question: {question}
+Reply:"""
+
+# Une clarification sans utilisateur pour y repondre serait un no-op
+# silencieux : la reponse est fournie par l'appelant (humain en production,
+# simule en evaluation, cf. runner/simulated_user.py).
+UserReply = Callable[[str], Awaitable[str]]
+
 _LIST_MARKER = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s*")
 
 
@@ -441,6 +459,48 @@ async def decompose_query(llm: LLMClient, cfg: PipelineConfig, question: str) ->
     except Exception:  # noqa: BLE001
         return []
     return parse_sub_queries(text, cfg.retrieval.max_sub_queries)
+
+
+def candidate_lines(contexts: list[Context], limit: int = 8) -> str:
+    """Resume des candidats par leur en-tete : source, date, titre.
+
+    L'en-tete contextuel est lu dans le texte du passage (« Title: … »),
+    pour ne pas dependre d'une requete de plus en base.
+    """
+    seen: set[str] = set()
+    lines: list[str] = []
+    for ctx in contexts:
+        if ctx.document_external_id in seen:
+            continue
+        seen.add(ctx.document_external_id)
+        fields = dict(
+            line.split(": ", 1) for line in ctx.text.splitlines()[:4] if ": " in line
+        )
+        date = fields.get("Published", "")[:10]
+        lines.append(f"- {fields.get('Source', '?')}, {date}: {fields.get('Title', '?')}")
+        if len(lines) >= limit:
+            break
+    return "\n".join(lines)
+
+
+def wants_clarification(reply: str) -> bool:
+    """Le modele demande-t-il une precision ? NONE, vide ou sans « ? » : non."""
+    text = reply.strip()
+    return bool(text) and not text.upper().startswith("NONE") and "?" in text
+
+
+async def clarifying_question(
+    llm: LLMClient, cfg: PipelineConfig, question: str, candidates: list[Context]
+) -> str | None:
+    try:
+        text = await _ask(
+            llm, cfg,
+            _CLARIFY_PROMPT.format(candidates=candidate_lines(candidates), question=question),
+            role="clarifier", max_tokens=60,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    return text if wants_clarification(text) else None
 
 
 async def hypothetical_document(llm: LLMClient, cfg: PipelineConfig, question: str) -> str | None:
@@ -506,10 +566,15 @@ async def retrieve(
     *,
     index_id: int,
     question: str,
+    user: UserReply | None = None,
 ) -> RetrievalResult:
     started = time.perf_counter()
     debug: dict[str, Any] = {}
     rr = cfg.retrieval
+    if rr.clarify and user is None:
+        raise ValueError(
+            "clarify=true exige un utilisateur pour repondre (reel, ou simule en evaluation)"
+        )
 
     search_text = question
     if rr.query_rewrite:
@@ -538,6 +603,22 @@ async def retrieve(
         conn, llm, cfg, index_id=index_id, text=search_text, k=pool_k,
         dense_text=dense_text, debug=debug,
     )
+
+    if rr.clarify and candidates:
+        asked = await clarifying_question(llm, cfg, question, candidates)
+        debug["clarify_asked"] = asked is not None
+        if asked is not None:
+            reply = await user(asked)  # type: ignore[misc]  # garanti plus haut
+            debug["clarify_question"] = asked
+            debug["clarify_reply"] = reply
+            if reply:
+                # La question enrichie de la reponse est cherchee a nouveau ;
+                # les deux classements sont fusionnes, pour qu'une reponse
+                # hors sujet degrade sans detruire.
+                second = await _search(
+                    conn, llm, cfg, index_id=index_id, text=f"{question} {reply}", k=pool_k
+                )
+                candidates = _rrf([candidates, second], rr.rrf_k, pool_k)
 
     if rr.query_decompose:
         sub_queries = await decompose_query(llm, cfg, question)

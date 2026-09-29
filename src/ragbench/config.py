@@ -103,6 +103,12 @@ class RetrievalConfig(_Frozen):
     # (la recherche lexicale garde la question). Aide quand vocabulaire de la
     # question et des documents divergent ; peut nuire quand ils sont alignes.
     hyde: bool = False
+    # Clarification : apres une premiere recherche, le generateur peut poser
+    # UNE question de precision a l'utilisateur, puis la recherche est refaite
+    # avec sa reponse. En evaluation, l'utilisateur est simule
+    # (runner/simulated_user.py) : il sait quels articles il a en tete, pas la
+    # reponse. Le gain mesure est donc une borne haute.
+    clarify: bool = False
 
     @model_validator(mode="after")
     def _requete_coherente(self) -> RetrievalConfig:
@@ -185,6 +191,7 @@ NEUTRAL_ADDITIONS: dict[tuple[str, str], Any] = {
     ("retrieval", "query_decompose"): False,
     ("retrieval", "max_sub_queries"): 3,
     ("retrieval", "hyde"): False,
+    ("retrieval", "clarify"): False,
 }
 
 
