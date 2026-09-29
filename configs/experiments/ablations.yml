@@ -1,0 +1,55 @@
+# Ablations sur les hyperparametres de retrieval :
+# - max_per_document : 2 contre 4
+# - fetch_k (taille du vivier) : 20 contre 50
+#
+# Mesurees sur le retrieval seul :
+#   uv run ragbench diagnose compare configs/experiments/ablations.yml:doc-cap-2 configs/experiments/ablations.yml:doc-cap-4 --dataset multihop-rag
+#   uv run ragbench diagnose compare configs/experiments/ablations.yml:fetch-20 configs/experiments/ablations.yml:fetch-50 --dataset multihop-rag
+
+base:
+  name: ablations
+  chunking:
+    strategy: recursive
+    chunk_size: 1000
+    chunk_overlap: 150
+    header_fields: [title, source, published_at]
+    header_scope: chunk
+  retrieval:
+    mode: hybrid
+    top_k: 5
+    fetch_k: 20
+    max_per_document: 2
+    query_prefix: "search_query: "
+  generation:
+    prompt_template: default
+    temperature: 0.0
+    thinking: false
+    max_tokens: 512
+  models:
+    generator: gemma4:e4b
+    embedder: nomic-embed-text:latest
+    judge: gemma4:e4b
+  seed: 42
+
+variants:
+  - name: doc-cap-2
+    description: Plafond de 2 passages par document (valeur par defaut).
+    retrieval:
+      max_per_document: 2
+      fetch_k: 30
+
+  - name: doc-cap-4
+    description: Plafond releve a 4 passages par document.
+    retrieval:
+      max_per_document: 4
+      fetch_k: 30
+
+  - name: fetch-20
+    description: Vivier fetch_k de 20 candidats.
+    retrieval:
+      fetch_k: 20
+
+  - name: fetch-50
+    description: Vivier fetch_k de 50 candidats.
+    retrieval:
+      fetch_k: 50
