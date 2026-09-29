@@ -34,6 +34,10 @@ stats = ["scipy>=1.14", "scikit-learn>=1.5"]
 # tourne sur CPU sans torch ; les modeles Hugging Face plus lourds
 # (Qwen3-Reranker, bge-reranker-v2-m3) demanderont l'extra transformers.
 rerank = ["rerankers[flashrank]>=0.10"]
+# Rerankers Hugging Face (Qwen3-Reranker). torch vient de l'index CPU de
+# PyTorch : le wheel PyPI par defaut embarque CUDA et plusieurs Go de
+# bibliotheques NVIDIA, inutiles sur un poste sans GPU.
+rerank-hf = ["transformers>=4.51", "torch>=2.4"]
 
 [project.scripts]
 ragbench = "ragbench.cli:app"
@@ -80,3 +84,11 @@ markers = [
 dev = [
     "pytest>=9.1.1",
 ]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]

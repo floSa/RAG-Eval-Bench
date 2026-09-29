@@ -65,3 +65,16 @@ variants:
       rerank: cross_encoder
       rerank_model: flashrank:ms-marco-MiniLM-L-12-v2
       fetch_k: 50
+
+  - name: hybrid-k5-qwen3-reranker
+    description: >
+      Qwen3-Reranker-0.6B (Apache-2.0, backend transformers, extra rerank-hf),
+      le seul reranker recent a battre nettement le dense dans les mesures
+      publiees. Vivier de 20 et non 50 : sur CPU, 50 passages coutent ~140 s
+      par question (mesure du 29/09, CPU partage). A lancer de preference sur
+      la machine GPU.
+    retrieval:
+      mode: hybrid
+      rerank: cross_encoder
+      rerank_model: qwen3:Qwen/Qwen3-Reranker-0.6B
+      fetch_k: 20

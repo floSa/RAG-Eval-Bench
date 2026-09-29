@@ -71,3 +71,11 @@ variants:
   - name: gen-phi4-mini
     description: Phi-4-mini 3,8B (2,5 Go), Microsoft, sans mode raisonnement.
     models: {generator: "phi4-mini:3.8b"}
+
+  - name: gen-granite4.1-3b
+    description: IBM Granite 4.1 3B (2,1 Go), sorti en juillet 2026, sans raisonnement.
+    models: {generator: "granite4.1:3b"}
+
+  - name: gen-ministral-3-3b
+    description: Mistral Ministral 3 3B (3,0 Go), multilingue, candidat pour le francais.
+    models: {generator: "ministral-3:3b"}

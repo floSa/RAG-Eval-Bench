@@ -271,11 +271,84 @@ _cross_encoders: dict[str, Any] = {}
 _cross_encoder_lock = threading.Lock()
 
 
+class Qwen3Reranker:
+    """Qwen3-Reranker via transformers : P(« yes ») sur la paire (requete, passage).
+
+    Ce n'est pas un cross-encoder de classification : c'est un petit LLM a qui
+    l'on demande si le document repond a la requete, et dont on lit la
+    probabilite du token « yes » face a « no » sur la derniere position. Le
+    prompt et l'instruction sont ceux de la fiche du modele (Apache-2.0) ;
+    les changer changerait les scores, ils font donc partie de l'identite du
+    backend, comme le nom du modele dans rerank_model.
+    """
+
+    PREFIX = (
+        "<|im_start|>system\nJudge whether the Document meets the requirements based on the "
+        'Query and the Instruct provided. Note that the answer can only be "yes" or "no".'
+        "<|im_end|>\n<|im_start|>user\n"
+    )
+    SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+    INSTRUCTION = "Given a web search query, retrieve relevant passages that answer the query"
+    # Un passage fait ~1 000 caracteres + en-tete, soit ~300 tokens : la borne
+    # ne tronque rien sur ce corpus, elle protege d'un document aberrant.
+    MAX_LENGTH = 1024
+    BATCH = 8
+
+    def __init__(self, model_name: str, n_threads: int) -> None:
+        try:
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+        except ImportError as exc:  # pragma: no cover - depend de l'extra installe
+            raise RerankFailure(
+                "le backend qwen3 demande l'extra rerank-hf : uv sync --extra rerank-hf"
+            ) from exc
+        torch.set_num_threads(n_threads)
+        self._torch = torch
+        cache = str(CROSS_ENCODER_CACHE / "hf")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name, padding_side="left", cache_dir=cache
+        )
+        self.model = AutoModelForCausalLM.from_pretrained(model_name, cache_dir=cache).eval()
+        self.yes_id = self.tokenizer.convert_tokens_to_ids("yes")
+        self.no_id = self.tokenizer.convert_tokens_to_ids("no")
+        self.prefix_ids = self.tokenizer.encode(self.PREFIX, add_special_tokens=False)
+        self.suffix_ids = self.tokenizer.encode(self.SUFFIX, add_special_tokens=False)
+
+    def score(self, query: str, passages: list[str]) -> list[float]:
+        torch = self._torch
+        budget = self.MAX_LENGTH - len(self.prefix_ids) - len(self.suffix_ids)
+        scores: list[float] = []
+        for start in range(0, len(passages), self.BATCH):
+            pairs = [
+                f"<Instruct>: {self.INSTRUCTION}\n<Query>: {query}\n<Document>: {doc}"
+                for doc in passages[start : start + self.BATCH]
+            ]
+            enc = self.tokenizer(
+                pairs, padding=False, truncation="longest_first",
+                return_attention_mask=False, max_length=budget,
+            )
+            enc["input_ids"] = [self.prefix_ids + ids + self.suffix_ids for ids in enc["input_ids"]]
+            batch = self.tokenizer.pad(enc, padding=True, return_tensors="pt")
+            with torch.no_grad():
+                logits = self.model(**batch).logits[:, -1, :]
+            pair = torch.stack([logits[:, self.no_id], logits[:, self.yes_id]], dim=1)
+            scores.extend(torch.nn.functional.log_softmax(pair, dim=1)[:, 1].exp().tolist())
+        return scores
+
+
 def _load_cross_encoder(spec: str) -> Any:
-    """Charge (une fois par processus) un reranker de la bibliotheque rerankers."""
+    """Charge (une fois par processus) le reranker designe par rerank_model.
+
+    Backends : ceux de la bibliotheque rerankers (flashrank…), et qwen3 pour
+    Qwen3-Reranker via transformers.
+    """
     if spec in _cross_encoders:
         return _cross_encoders[spec]
     backend, _, name = spec.partition(":")
+    if backend == "qwen3":
+        CROSS_ENCODER_CACHE.mkdir(parents=True, exist_ok=True)
+        _cross_encoders[spec] = Qwen3Reranker(name, settings.rerank_threads)
+        return _cross_encoders[spec]
     try:
         from rerankers import Reranker
     except ImportError as exc:  # pragma: no cover - depend de l'extra installe
@@ -314,6 +387,9 @@ def _limit_onnx_threads(ranker: Any, n_threads: int) -> None:
 
 def _cross_encoder_scores(spec: str, question: str, passages: list[str]) -> list[float]:
     ranker = _load_cross_encoder(spec)
+    if isinstance(ranker, Qwen3Reranker):
+        with _cross_encoder_lock:
+            return ranker.score(question, passages)
     with _cross_encoder_lock:
         ranked = ranker.rank(query=question, docs=passages, doc_ids=list(range(len(passages))))
     scores = [float("nan")] * len(passages)
