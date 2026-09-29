@@ -1,0 +1,73 @@
+# Comparaison de generateurs sur la meilleure configuration mesuree.
+#
+# Base : configs/recommended.yml (hybride RRF, en-tete contextuel, plafond de
+# 2 passages par article), mais avec le prompt `default` et non `decompose`.
+# Seul le generateur change : retrieval, prompt et juge sont identiques, donc
+# tout ecart de justesse est attribuable au generateur.
+#
+# Pourquoi pas `decompose` : mesure du 28/09 sur 5 questions, qwen3.5:4b
+# n'ecrit jamais le marqueur « ANSWER: » que ce prompt attend. Toute la liste
+# de faits est alors gardee comme reponse (~400 tokens, 150 s par question
+# sur CPU) et ses tournures (« the context does not mention… ») la font
+# classer a tort comme abstention. L'extraction de la reponse de `decompose`
+# est calibree sur gemma4:e4b ; elle est a rendre robuste avant de comparer
+# des generateurs avec ce prompt.
+#
+# Candidats de moins de 4 Go, faisables sur le poste CPU (num_thread 6 fige
+# dans chaque modele Ollama). Le generateur documente, gemma4:e4b (9,6 Go),
+# reste la reference des campagnes historiques ; il n'est pas dans cette
+# matrice.
+#
+#   uv run ragbench run configs/experiments/generators.yml --matrix \
+#     --dataset multihop-rag
+#
+# Le juge reste llama3.2:3b (decision figee de CADRAGE.md) : le changer en
+# meme temps que le generateur rendrait les scores de fidelite incomparables.
+
+base:
+  name: generators
+  chunking:
+    strategy: recursive
+    chunk_size: 1000
+    chunk_overlap: 150
+    document_prefix: "search_document: "
+    header_fields: [title, source, published_at]
+    header_scope: chunk
+  retrieval:
+    mode: hybrid
+    top_k: 5
+    fetch_k: 30
+    rerank: none
+    max_per_document: 2
+    query_prefix: "search_query: "
+    query_rewrite: false
+  generation:
+    prompt_template: default
+    temperature: 0.0
+    max_tokens: 256
+    allow_abstain: true
+    thinking: false
+  models:
+    embedder: nomic-embed-text:latest
+    judge: llama3.2:3b
+  seed: 42
+
+variants:
+  - name: gen-qwen3.5-4b
+    description: Qwen3.5 4B (3,4 Go), generateur provisoire depuis le 28/09.
+    models: {generator: "qwen3.5:4b"}
+
+  - name: gen-qwen3.5-2b
+    description: Qwen3.5 2B (2,7 Go), meme generation que qwen3.5:4b, plus petit.
+    models: {generator: "qwen3.5:2b"}
+
+  - name: gen-qwen3-4b
+    description: >
+      Qwen3-4B-Instruct-2507 (2,5 Go), predecesseur de Qwen3.5. Le tag nu
+      qwen3:4b designe la variante Thinking-2507, qui raisonne toujours et
+      ignore think=false : son raisonnement finirait dans la reponse.
+    models: {generator: "qwen3:4b-instruct"}
+
+  - name: gen-phi4-mini
+    description: Phi-4-mini 3,8B (2,5 Go), Microsoft, sans mode raisonnement.
+    models: {generator: "phi4-mini:3.8b"}

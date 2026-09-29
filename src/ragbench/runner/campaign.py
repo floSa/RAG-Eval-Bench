@@ -35,6 +35,7 @@ from ..rag import pipeline
 from ..rag.ingest import ensure_index
 from ..settings import Settings
 from ..settings import settings as default_settings
+from .simulated_user import load_document_meta, simulated_user
 
 
 @dataclass
@@ -126,6 +127,19 @@ async def run_campaign(
                 warnings=warnings,
             )
             questions = load_questions(conn, dataset_id, split=split, limit=limit)
+            meta = (
+                load_document_meta(
+                    conn,
+                    [
+                        ev["document_external_id"]
+                        for q in questions
+                        for ev in (q.get("gold_evidence") or [])
+                        if ev.get("document_external_id")
+                    ],
+                )
+                if cfg.retrieval.clarify
+                else {}
+            )
             conn.commit()
 
         # --- execution (N workers, N connexions) -------------------------
@@ -149,10 +163,19 @@ async def run_campaign(
                         break
 
                     try:
+                        user = (
+                            simulated_user(
+                                llm, cfg, question=question["question"],
+                                gold_evidence=question.get("gold_evidence") or [], meta=meta,
+                            )
+                            if cfg.retrieval.clarify
+                            else None
+                        )
                         result = await pipeline.answer(
                             wconn, llm, cfg,
                             index_id=index.index_id,
                             question=question["question"],
+                            user=user,
                         )
                         row = result.as_prediction_row(question["id"])
                     except Exception as exc:  # noqa: BLE001
