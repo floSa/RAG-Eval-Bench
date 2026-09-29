@@ -5,6 +5,9 @@
 # Mesurees sur le retrieval seul :
 #   uv run ragbench diagnose compare configs/experiments/ablations.yml:doc-cap-2 configs/experiments/ablations.yml:doc-cap-4 --dataset multihop-rag
 #   uv run ragbench diagnose compare configs/experiments/ablations.yml:fetch-20 configs/experiments/ablations.yml:fetch-50 --dataset multihop-rag
+#
+# Le diagnostic ne genere pas : generateur et juge sont ceux des autres
+# campagnes, pour que les hashes restent coherents si on passe a `ragbench run`.
 
 base:
   name: ablations
@@ -26,9 +29,9 @@ base:
     thinking: false
     max_tokens: 512
   models:
-    generator: gemma4:e4b
+    generator: qwen3:4b-instruct
     embedder: nomic-embed-text:latest
-    judge: gemma4:e4b
+    judge: llama3.2:3b
   seed: 42
 
 variants:
