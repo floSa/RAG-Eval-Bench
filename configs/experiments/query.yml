@@ -38,9 +38,9 @@ base:
     max_tokens: 256
     thinking: false
   models:
-    generator: qwen3.5:4b
+    generator: granite4.2:8b
     embedder: nomic-embed-text:latest
-    judge: llama3.2:3b
+    judge: gemma4:e4b
   seed: 42
 
 variants:

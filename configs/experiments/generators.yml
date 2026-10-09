@@ -49,33 +49,24 @@ base:
     thinking: false
   models:
     embedder: nomic-embed-text:latest
-    judge: llama3.2:3b
+    judge: gemma4:e4b
   seed: 42
 
 variants:
-  - name: gen-qwen3.5-4b
-    description: Qwen3.5 4B (3,4 Go), generateur provisoire depuis le 28/09.
-    models: {generator: "qwen3.5:4b"}
+  - name: gen-granite4.2-8b
+    description: IBM Granite 4.2 8B (5,3 Go), modele recent avec thinking desactive. Juge gemma4:e4b.
+    models:
+      generator: "granite4.2:8b"
+      judge: "gemma4:e4b"
 
-  - name: gen-qwen3.5-2b
-    description: Qwen3.5 2B (2,7 Go), meme generation que qwen3.5:4b, plus petit.
-    models: {generator: "qwen3.5:2b"}
+  - name: gen-gemma4-e4b
+    description: Google Gemma 4 e4B (6,6 Go), modele de reference du projet. Juge granite4.2:8b.
+    models:
+      generator: "gemma4:e4b"
+      judge: "granite4.2:8b"
 
-  - name: gen-qwen3-4b
-    description: >
-      Qwen3-4B-Instruct-2507 (2,5 Go), predecesseur de Qwen3.5. Le tag nu
-      qwen3:4b designe la variante Thinking-2507, qui raisonne toujours et
-      ignore think=false : son raisonnement finirait dans la reponse.
-    models: {generator: "qwen3:4b-instruct"}
-
-  - name: gen-phi4-mini
-    description: Phi-4-mini 3,8B (2,5 Go), Microsoft, sans mode raisonnement.
-    models: {generator: "phi4-mini:3.8b"}
-
-  - name: gen-granite4.1-3b
-    description: IBM Granite 4.1 3B (2,1 Go), sorti en juillet 2026, sans raisonnement.
-    models: {generator: "granite4.1:3b"}
-
-  - name: gen-ministral-3-3b
-    description: Mistral Ministral 3 3B (3,0 Go), multilingue, candidat pour le francais.
-    models: {generator: "ministral-3:3b"}
+  - name: gen-qwen3.5-9b
+    description: Qwen3.5 9B (6,6 Go), grand modele generaliste compact. Juge granite4.2:8b.
+    models:
+      generator: "qwen3.5:9b"
+      judge: "granite4.2:8b"
