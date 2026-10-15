@@ -95,18 +95,17 @@ listes vides qui seraient interprétées comme « sans réponse ».
 
 **C'est ici que tout se joue.** MultiHop-RAG fournit les réponses gold ; vos documents
 techniques, non. Sans elles, la référence déterministe disparaît et il ne reste que des
-juges LLM — dont ce banc a mesuré qu'aucun modèle local de 3–4 milliards de paramètres
-n'est fiable (voir [JUGES.md](JUGES.md#2-un-modèle-plus-récent-ne-fait-pas-un-meilleur-juge)).
+juges LLM, dont la fiabilité n'est pas acquise et doit se mesurer sur votre domaine
+(voir [JUGES.md](JUGES.md#2-calibrer-un-juge)).
 
 Brancher ses données sans vérité terrain produit des chiffres, pas des mesures.
 
 ### Combien de questions annoter ?
 
-**50 à 100 suffisent** pour départager deux configurations. Mesuré sur ce banc : 53
-annotations ont donné un κ de +0.958 et un intervalle de confiance exploitable. Ne visez
+**50 à 100 suffisent** pour départager deux configurations. Ne visez
 pas 1 000 questions au premier tour — vous n'en aurez pas besoin, et vous abandonnerez.
 
-Les 2 356 questions non échantillonnées de MultiHop-RAG restent en base sous le split
+Les questions non échantillonnées restent en base sous le split
 `pool` exactement pour ce cas : agrandir l'échantillon quand un écart est trop serré
 pour conclure.
 
@@ -156,7 +155,7 @@ reprendre :
 |---|---|---|
 | `to_tsvector('english', …)` | [rag/retrieve.py](../src/ragbench/rag/retrieve.py) | La recherche lexicale ne lemmatise pas le français avec le dictionnaire anglais. Remplacer par `'french'`. |
 | `chunk_size: 1000` | [configs/recommended.yml](../configs/recommended.yml) | Réglé pour des articles de presse. Une documentation technique très structurée demande souvent des chunks plus petits. |
-| `header_fields` | idem | `[title, source, published_at]` correspond à de la presse. Mettez vos propres champs : version, service, référence. Ce réglage vaut +0.102 de justesse, ne le négligez pas. |
+| `header_fields` | idem | `[title, source, published_at]` correspond à de la presse. Mettez vos propres champs : version, service, référence. Ce réglage pèse sur la justesse : ne le négligez pas. |
 
 Le modèle d'embedding `nomic-embed-text` est multilingue, il n'a pas besoin d'être
 changé pour du français.
@@ -190,21 +189,20 @@ uv run streamlit run src/ragbench/ui/app.py
 
 **L'étape 5 n'est pas optionnelle.** Elle vous dit si les juges LLM sont utilisables sur
 *votre* domaine. Un juge qui obtient κ < 0,4 chez vous ne doit pas servir à trancher,
-quelles que soient ses performances sur MultiHop-RAG.
+quelles que soient ses performances ailleurs.
 
 ---
 
-## 5. Trois pièges mesurés sur ce banc
+## 5. Trois pièges à éviter
 
 **Ne comparez jamais deux moyennes à l'œil.** Utilisez `ragbench compare`, qui produit un
 intervalle de confiance et un test apparié. Un écart de 2 points sur 200 questions n'est
 pas un écart.
 
-**Le facteur limitant est presque toujours le retrieval, pas le modèle.** Sur
-MultiHop-RAG, dans 96 % des cas les passages remontés ne contiennent pas tous les faits
-nécessaires — le générateur s'abstient à raison. Une annotation manuelle de 13 réponses
-l'a confirmé : 3 réponses **fausses** étaient parfaitement **fidèles** aux passages qu'on
-leur avait donnés. Avant de changer de modèle, regardez `nugget_full_coverage`.
+**Le facteur limitant est souvent le retrieval, pas le modèle.** Quand les passages
+remontés ne contiennent pas tous les faits nécessaires, le générateur ne peut pas bien
+répondre, et s'abstient parfois à raison. Avant de changer de modèle, regardez
+`nugget_full_coverage`.
 
 **Fidélité n'est pas justesse.** Une réponse peut être irréprochable vis-à-vis des
 passages fournis et fausse, parce que le mauvais passage a été remonté. Publiez toujours
@@ -217,8 +215,6 @@ les deux, jamais l'une pour l'autre.
 Le banc est **100 % on-premise** : Postgres en local, inférence via le service Ollama
 central, aucun appel sortant. Vos documents ne quittent pas votre machine.
 
-Une seule exception, et elle est signalée comme telle dans
-[JUGES.md](JUGES.md#3-le-plafond--ce-que-donnerait-un-très-grand-juge) : la
-mesure d'étalonnage par un très grand modèle externe. Elle a été faite **une fois, sur un
-corpus public**, pour chiffrer le plafond atteignable. Ne la rejouez pas sur des données
-sensibles.
+Une seule exception existe, documentée sur la branche `main` : une mesure d'étalonnage
+par un très grand modèle externe, faite **une fois, sur un corpus public**. Ne la
+rejouez pas sur des données sensibles.

@@ -127,7 +127,7 @@ des résultats.
   forme abrégée — `Bankman-Fried` pour un gold `Sam Bankman-Fried`. Les valeurs de
   `contains` sont donc des **bornes basses** : 0.340 mesuré contre 0.358 réel sur cet
   échantillon. Les comparaisons appariées restent valides, le biais s'annulant dans
-  l'écart. Détail dans [JUGES.md](JUGES.md#4-la-référence-elle-même-a-un-plafond).
+  l'écart. Détail dans [JUGES.md](JUGES.md#4-la-référence-a-elle-aussi-un-plafond).
 
 - **Un échantillon de 200 questions suffit pour départager deux configurations.**
   Vérifié empiriquement : les intervalles de confiance obtenus (± 0,05 sur `recall@3`)

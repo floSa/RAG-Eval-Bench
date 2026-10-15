@@ -15,14 +15,14 @@ Deux branches, un seul code.
 
 | Objectif | Branche | À lire en premier |
 |---|---|---|
-| Voir la démarche sur un cas concret, avec résultats et interprétation | `main` (cette branche) | [docs/METHODOLOGIE.md](docs/METHODOLOGIE.md) |
-| Évaluer **son** RAG sur **ses** données | `outil` | [docs/PREREQUIS.md](docs/PREREQUIS.md) |
+| Voir la démarche sur un cas concret, avec résultats et interprétation | `main` | [docs/METHODOLOGIE.md](docs/METHODOLOGIE.md) |
+| Évaluer **son** RAG sur **ses** données | `outil` (cette branche) | [docs/PREREQUIS.md](docs/PREREQUIS.md) |
 
 - `main` : corpus public MultiHop-RAG, déjà annoté, avec les mesures et leur lecture.
 - `outil` : même code, sans les résultats du corpus public, avec les consignes pour
   brancher ses propres données.
 - Les prérequis sont identiques dans les deux branches : [docs/PREREQUIS.md](docs/PREREQUIS.md).
-- Le code est modifié sur `main`, puis fusionné dans `outil`.
+- Le code est modifié sur `main`, puis fusionné dans `outil`. Les pages de résultats restent propres à chaque branche.
 
 ---
 
@@ -33,7 +33,7 @@ Deux branches, un seul code.
 - [Démarrage](#démarrage)
 - [Configuration](#configuration)
 - [Commandes](#commandes)
-- [Résultats de référence](#résultats-de-référence)
+- [Lire les résultats](#lire-les-résultats)
 - [Tests](#tests)
 - [Structure du projet](#structure-du-projet)
 - [Dépannage](#dépannage)
@@ -131,15 +131,17 @@ uv run ragbench doctor
 avant toute campagne : découvrir à la question 400 qu'un modèle manque coûte une heure
 de GPU.
 
-Première campagne :
+Première campagne, sur **son** corpus :
+
+1. Lire [docs/PREREQUIS.md](docs/PREREQUIS.md) : ce qu'il faut fournir.
+2. Écrire le loader, en suivant [docs/BRANCHER-SES-DONNEES.md](docs/BRANCHER-SES-DONNEES.md).
+   Le loader `multihop_rag` ([src/ragbench/datasets/](src/ragbench/datasets/)) sert d'exemple.
 
 ```bash
-mkdir -p data/raw
-curl -sSL -o data/raw/corpus.json https://huggingface.co/datasets/yixuantt/MultiHopRAG/resolve/main/corpus.json
-curl -sSL -o data/raw/MultiHopRAG.json https://huggingface.co/datasets/yixuantt/MultiHopRAG/resolve/main/MultiHopRAG.json
-uv run ragbench dataset load multihop-rag --sample 200
-uv run ragbench run configs/baseline.yml --dataset multihop-rag
+uv run ragbench dataset load mon-corpus --sample 200
+uv run ragbench run configs/baseline.yml --dataset mon-corpus
 uv run ragbench eval run 1
+uv run ragbench calibrate 1
 ```
 
 | Accès | URL | Lancement |
@@ -216,23 +218,14 @@ alors stockés sous `évaluateur@juge`).
 
 ---
 
-## Résultats de référence
+## Lire les résultats
 
-MultiHop-RAG, 200 questions stratifiées, `gemma4:e4b` + `nomic-embed-text`. Détail et
-méthode dans [docs/METHODOLOGIE.md](docs/METHODOLOGIE.md).
+Cette branche ne contient aucun résultat de corpus. Les mesures du corpus public
+MultiHop-RAG sont sur la branche `main`.
 
-| Question | Réponse | Statut |
-|---|---|---|
-| Quel mode de recherche ? | **Hybride RRF** : recall@3 +0.098 vs dense | p < 0.001 |
-| Le dense bat-il le lexical ? | **Non** — le lexical le bat de +0.062 | p = 0.010 |
-| Le reranking LLM paie-t-il ? | **Non** : −0.001, pour 5× le coût | p = 0.959 |
-| L'en-tête contextuel sert-il ? | **Oui** : +0.102 de justesse | p < 0.001 |
-| Quel prompt ? | **`decompose`** : +0.096, sans perdre l'abstention | p = 0.001 |
-| Le RAG bat-il le modèle seul ? | **Non démontrable** : IC95 [−0.034, +0.107] | p = 0.425 |
-
-Le diagnostic de fond : `nugget_full_coverage = 0.0395`. Sur **4 % des questions
-seulement**, tous les faits nécessaires sont présents dans les passages remontés. Régler
-le prompt ne servira à rien tant que la couverture factuelle est à ce niveau.
+- Ordre de lecture d'un run, lecture des verdicts, précautions :
+  [docs/METHODOLOGIE.md](docs/METHODOLOGIE.md#4-lire-ses-résultats).
+- Fiabilité des juges et calibration : [docs/JUGES.md](docs/JUGES.md).
 
 ---
 
@@ -341,8 +334,8 @@ Aucun fichier `LICENSE` n'est présent à la racine du dépôt à ce jour.
 | **[docs/GLOSSAIRE.md](docs/GLOSSAIRE.md)** | Chaque terme en **français simple**, sans formule. **Commencez par là si le domaine ne vous est pas familier.** |
 | **[docs/PREREQUIS.md](docs/PREREQUIS.md)** | **Ce qu'il faut réunir avant d'évaluer son RAG** : données, annotation, infrastructure, liste de contrôle. Une page. |
 | **[docs/BRANCHER-SES-DONNEES.md](docs/BRANCHER-SES-DONNEES.md)** | **Reprendre le banc sur VOS documents** : charger un corpus, construire la vérité terrain, combien annoter, les pièges. |
-| [docs/METHODOLOGIE.md](docs/METHODOLOGIE.md) | Ce que le banc **mesure** et pourquoi on peut le croire : métriques, statistiques, résultats. Commence par une synthèse en un tableau. |
-| [docs/JUGES.md](docs/JUGES.md) | Tout sur les **juges LLM** : reproductibilité, calibration, comparaison de 4 modèles, le plafond atteignable |
+| [docs/METHODOLOGIE.md](docs/METHODOLOGIE.md) | Ce que le banc **mesure** et pourquoi on peut le croire : métriques, statistiques, **lecture des résultats**. |
+| [docs/JUGES.md](docs/JUGES.md) | Tout sur les **juges LLM** : reproductibilité, calibration par le κ de Cohen, choix de la taille d'un juge |
 | [docs/ETAT-DE-L-ART.md](docs/ETAT-DE-L-ART.md) | L'**état de l'art** au 28/09/2026 : ce que les mesures indépendantes disent des techniques, juges, générateurs de tests et parseurs, et les briques récupérables |
 | [docs/CADRAGE.md](docs/CADRAGE.md) | Le **pourquoi** : objectifs, périmètre, contraintes, hypothèses, décisions, roadmap |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Le **comment** : services, flux, schéma de base, décisions techniques, limites |
