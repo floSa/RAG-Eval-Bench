@@ -77,6 +77,16 @@ La taille ne garantit pas la qualité. Elle se mesure.
   lui-même est biaisé.
 - Garder le même juge pendant toute une comparaison de configurations.
 
+**Option : un grand modèle comme étalon.**
+
+- Faire juger un échantillon par un grand modèle de fondation, puis calculer le κ des
+  petits juges contre lui.
+- Cela dit si un petit modèle local suffit, ou si seul un gros modèle atteint la qualité
+  visée.
+- Cette phase implique un **appel sortant**. Elle ne fait pas partie du pipeline
+  reproductible.
+- **Ne pas la faire si les données sont sensibles.**
+
 ---
 
 ## 4. La référence a elle aussi un plafond
