@@ -58,7 +58,7 @@ VERDICTS: dict[int, int] = {
              # 2 000 yards n'a ete remonte.
 }
 
-NOTE = ("Annotation manuelle Claude Opus 5, passages remontes integraux sous les yeux. "
+NOTE = ("Annotation Claude Opus 5 (etalon externe), passages remontes integraux sous les yeux. "
         "Critere : chaque affirmation de la reponse est-elle soutenue par les passages ?")
 
 SQL = """

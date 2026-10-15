@@ -242,8 +242,8 @@ Tableau complet dans le [README](../README.md#licences--composants).
   affirme seulement que son accord avec la vérité terrain dépasse le hasard : « mieux
   que rien », pas « fiable ». Il reste sous le repère de 0,6.
 
-  **Le plafond n'est pas la tâche, c'est la taille.** Les mêmes 53 réponses jugées à la
-  main par Claude Opus 5 donnent **κ = +0.958**. Les questions étaient donc jugeables ;
+  **Le plafond n'est pas la tâche, c'est la taille.** Les mêmes 53 réponses jugées par
+  un grand modèle externe (Claude Opus 5) donnent **κ = +0.958**. Les questions étaient donc jugeables ;
   ce sont les petits modèles qui ne les jugent pas. L'écart 0.958 / 0.458 chiffre le prix
   de la contrainte on-premise sur ce poste précis. Ça ne fait pas d'un juge externe une
   option : il viole la contrainte, et sert d'étalon mesuré une fois sur corpus public.
