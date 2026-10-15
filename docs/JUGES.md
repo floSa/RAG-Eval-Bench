@@ -117,10 +117,13 @@ ragbench calibrate 24
 
 ## 3. Le plafond : ce que donnerait un très grand modèle (étalon externe, optionnel)
 
+**Objectif** : savoir si les modèles locaux (on-premise) de la démo sont à la hauteur, ou
+si seul un modèle de fondation récent, beaucoup plus gros, atteint la qualité visée.
+
 Les quatre juges locaux plafonnent sous le seuil d'utilisabilité. Restait à savoir si
 c'est une limite de la **taille des modèles** ou une limite de la **tâche** — certaines
 questions de ce corpus sont peut-être indécidables. Un grand modèle de fondation sert
-d'étalon : les 53 mêmes réponses du run 24 ont été jugées par **Claude Opus 5**, en
+d'étalon, pour comparer les petits modèles à un modèle de référence : les 53 mêmes réponses du run 24 ont été jugées par **Claude Opus 5**, en
 aveugle (référence non consultée avant verdict), sur le critère de `contains`.
 
 | Juge | κ vs vérité terrain | Trop généreux | Trop sévère | n |
@@ -139,8 +142,10 @@ aveugle (référence non consultée avant verdict), sur le critère de `contains
 calibration**, mesuré une fois sur un corpus public. Il ne fait **pas partie du pipeline
 reproductible**. Sur des données sensibles, cette phase ne se fait pas.
 
-*À quoi il sert* : savoir si un petit modèle local suffit, ou si seul un gros modèle
-atteint la qualité visée.
+*Ce que ça apporte à la démo* : sur MultiHop-RAG, un modèle de référence de très grande
+taille juge presque comme la vérité terrain (κ 0.958), les petits modèles locaux non
+(κ max 0.458). Le constat est mesuré sur ce corpus ; il ne se transpose pas sans refaire
+la mesure.
 
 *Limites* : n = 53, un seul modèle étalon, aucune réplication. Un protocole complet
 ferait juger plusieurs étalons indépendants et mesurerait leur accord **entre eux** avant
