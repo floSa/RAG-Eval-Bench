@@ -9,6 +9,23 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.60-FF4B4B?logo=streamlit&logoColor=white)
 ![Ollama](https://img.shields.io/badge/Ollama-service_central-000000?logo=ollama&logoColor=white)
 
+## Par où commencer
+
+Deux branches, un seul code.
+
+| Objectif | Branche | À lire en premier |
+|---|---|---|
+| Voir la démarche sur un cas concret, avec résultats et interprétation | `main` (cette branche) | [docs/METHODOLOGIE.md](docs/METHODOLOGIE.md) |
+| Évaluer **son** RAG sur **ses** données | `outil` | [docs/PREREQUIS.md](docs/PREREQUIS.md) |
+
+- `main` : corpus public MultiHop-RAG, déjà annoté, avec les mesures et leur lecture.
+- `outil` : même code, sans les résultats du corpus public, avec les consignes pour
+  brancher ses propres données.
+- Les prérequis sont identiques dans les deux branches : [docs/PREREQUIS.md](docs/PREREQUIS.md).
+- Le code est modifié sur `main`, puis fusionné dans `outil`.
+
+---
+
 ## Sommaire
 
 - [Ce que fait le projet](#ce-que-fait-le-projet)
@@ -322,6 +339,7 @@ Aucun fichier `LICENSE` n'est présent à la racine du dépôt à ce jour.
 | Document | Contenu |
 |---|---|
 | **[docs/GLOSSAIRE.md](docs/GLOSSAIRE.md)** | Chaque terme en **français simple**, sans formule. **Commencez par là si le domaine ne vous est pas familier.** |
+| **[docs/PREREQUIS.md](docs/PREREQUIS.md)** | **Ce qu'il faut réunir avant d'évaluer son RAG** : données, annotation, infrastructure, liste de contrôle. Une page. |
 | **[docs/BRANCHER-SES-DONNEES.md](docs/BRANCHER-SES-DONNEES.md)** | **Reprendre le banc sur VOS documents** : charger un corpus, construire la vérité terrain, combien annoter, les pièges. |
 | [docs/METHODOLOGIE.md](docs/METHODOLOGIE.md) | Ce que le banc **mesure** et pourquoi on peut le croire : métriques, statistiques, résultats. Commence par une synthèse en un tableau. |
 | [docs/JUGES.md](docs/JUGES.md) | Tout sur les **juges LLM** : reproductibilité, calibration, comparaison de 4 modèles, le plafond atteignable |
