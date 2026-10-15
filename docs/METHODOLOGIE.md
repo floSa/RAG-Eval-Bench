@@ -390,8 +390,8 @@ Sections d'honnêteté, à lire avant d'extrapoler.
   information contrefactuelle. Les benchmarks RGB et CRUD-RAG couvrent ce terrain ; ils
   ne sont pas branchés.
 - **La fidélité validée à grande échelle.** La calibration automatique ne couvre pas la
-  fidélité, et l'annotation manuelle ne porte que sur 13 réponses — voir
-  [JUGES.md](JUGES.md#6-annotation-manuelle-de-la-fidélité).
+  fidélité, et l'annotation de référence ne porte que sur 13 réponses — voir
+  [JUGES.md](JUGES.md#6-annotation-de-la-fidélité).
 - **La latence en conditions réelles.** Les temps mesurés le sont sous
   `OLLAMA_NUM_PARALLEL=4`, avec un GPU dédié à la campagne. Ils ne préjugent pas d'une
   latence utilisateur en production.

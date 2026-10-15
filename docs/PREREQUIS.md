@@ -67,6 +67,12 @@ Elle est limitée à un échantillon.
 - **Niveau 3 — 30 jugements humains** tirés au hasard, saisis dans l'onglet
   *Annotation* : le κ de Cohen entre l'humain et le juge valide la fidélité.
 
+Option, hors pipeline reproductible : un **grand modèle externe comme étalon**.
+
+- Il sert à savoir si un petit modèle local suffit, ou si seul un gros modèle atteint la
+  qualité visée.
+- Il implique un appel sortant : **à ne pas faire si les données sont sensibles**.
+
 Lecture du κ :
 
 - **> 0,8** : le juge fait foi.

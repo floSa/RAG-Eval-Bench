@@ -115,13 +115,13 @@ ragbench calibrate 24
 
 ---
 
-## 3. Le plafond : ce que donnerait un très grand juge
+## 3. Le plafond : ce que donnerait un très grand modèle (étalon externe, optionnel)
 
 Les quatre juges locaux plafonnent sous le seuil d'utilisabilité. Restait à savoir si
 c'est une limite de la **taille des modèles** ou une limite de la **tâche** — certaines
-questions de ce corpus sont peut-être indécidables. Un juge hors catégorie tranche la
-question : les 53 mêmes réponses du run 24 ont été jugées à la main par **Claude Opus 5**,
-en aveugle (référence non consultée avant verdict), sur le critère de `contains`.
+questions de ce corpus sont peut-être indécidables. Un grand modèle de fondation sert
+d'étalon : les 53 mêmes réponses du run 24 ont été jugées par **Claude Opus 5**, en
+aveugle (référence non consultée avant verdict), sur le critère de `contains`.
 
 | Juge | κ vs vérité terrain | Trop généreux | Trop sévère | n |
 |---|---|---|---|---|
@@ -135,13 +135,16 @@ en aveugle (référence non consultée avant verdict), sur le critère de `conta
 0.958 contre 0.458 mesure exactement le prix de la contrainte on-premise sur ce poste.
 
 *Ce que ça ne dit pas* : que le banc devrait appeler un juge externe. Claude Opus 5
-**viole la contrainte on-premise** — un jugement par appel sortant, sur un corpus qui
-pourrait être confidentiel dans un autre déploiement. C'est un **étalon de calibration**,
-mesuré une fois sur un corpus public, pas une brique du pipeline.
+**viole la contrainte on-premise** — un jugement par appel sortant. C'est un **étalon de
+calibration**, mesuré une fois sur un corpus public. Il ne fait **pas partie du pipeline
+reproductible**. Sur des données sensibles, cette phase ne se fait pas.
 
-*Limites* : n = 53, un seul annotateur, aucune réplication. Un protocole complet ferait
-juger plusieurs annotateurs indépendants et mesurerait leur accord **entre eux** avant de
-comparer un juge à eux. Les 53 verdicts sont conservés en base sous l'annotateur
+*À quoi il sert* : savoir si un petit modèle local suffit, ou si seul un gros modèle
+atteint la qualité visée.
+
+*Limites* : n = 53, un seul modèle étalon, aucune réplication. Un protocole complet
+ferait juger plusieurs étalons indépendants et mesurerait leur accord **entre eux** avant
+de comparer un juge à eux. Les 53 verdicts sont conservés en base sous l'annotateur
 `claude-opus-5` et consultables dans l'onglet **Annotation**.
 
 ---
@@ -203,11 +206,12 @@ fausses, un juge qui répond toujours « fausse » atteint 80 % d'accord et un �
 
 ---
 
-## 6. Annotation manuelle de la fidélité
+## 6. Annotation de la fidélité
 
 La calibration automatique porte sur la justesse. La fidélité, elle, demandait une
-annotation à la main — c'est la seule chose que la vérité terrain ne pouvait pas fournir.
-**13 réponses non abstenues du run 24** ont été jugées avec les passages remontés
+annotation de référence — c'est la seule chose que la vérité terrain ne pouvait pas
+fournir. **13 réponses non abstenues du run 24** ont été jugées par le même étalon externe,
+avec les passages remontés
 **intégraux** sous les yeux, critère : chaque affirmation est-elle soutenue par les
 passages ?
 
@@ -229,7 +233,7 @@ justesse de 0.339.
 il est affamé. Cohérent avec `nugget_full_coverage = 0.0395`. Avant de changer de modèle,
 il faut remonter plus de documents pertinents.
 
-*Limites* : n = 13, un seul annotateur. Suffisant pour établir que les deux notions
+*Limites* : n = 13, un seul modèle étalon. Suffisant pour établir que les deux notions
 divergent, insuffisant pour chiffrer un taux de fidélité. Rejouable :
 `uv run python scripts/annotation_fidelite.py`.
 

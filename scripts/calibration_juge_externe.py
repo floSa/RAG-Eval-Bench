@@ -4,7 +4,7 @@ Les quatre juges locaux testes plafonnent sous le seuil d'utilisabilite
 (kappa > 0,6). Restait a savoir si c'est une limite de la TAILLE des modeles
 ou de la TACHE — certaines questions du corpus sont peut-etre indecidables.
 
-Ce script fige les 53 verdicts rendus a la main par Claude Opus 5 sur le
+Ce script fige les 53 verdicts rendus par Claude Opus 5 (etalon externe) sur le
 run 24, en aveugle (la colonne de reference n'a pas ete consultee avant de
 trancher), et recalcule le kappa contre la verite terrain.
 
@@ -56,7 +56,7 @@ WHERE p.run_id = %s
 ORDER BY p.question_id
 """
 
-NOTE = ("Jugement manuel Claude Opus 5, en aveugle (reference non consultee "
+NOTE = ("Jugement Claude Opus 5 (etalon externe), en aveugle (reference non consultee "
         "avant verdict). Critere identique a native.answer/contains.")
 
 
