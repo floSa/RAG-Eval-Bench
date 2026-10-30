@@ -13,3 +13,6 @@ data/cache/
 
 # Cache et telemetrie crees par DeepEval a l execution.
 .deepeval/
+
+# Config locale de l assistant de code et worktrees temporaires.
+.claude/
