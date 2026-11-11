@@ -23,25 +23,14 @@ pour les subir :
 
 3. Le cout est reel, et bien plus eleve qu'attendu. Faithfulness decompose
    la reponse en claims puis verifie chacune : plusieurs appels LLM par
-   question et par metrique. Mesure sur ollama-central, avec gemma4:e4b
-   comme juge : 12 a 30 SECONDES par appel de jugement, contre ~1 s pour
-   les evaluateurs natifs.
+   question et par metrique.
 
-   La cause est structurelle et vaut d'etre connue : Ragas — comme tout
-   framework externe — passe par l'endpoint OpenAI-compatible, qui n'expose
-   PAS le reglage du raisonnement d'Ollama. Le juge « reflechit » donc a
-   chaque jugement, et paie ~465 tokens de reflexion par appel. Les
-   evaluateurs natifs, eux, passent par /api/chat avec think=false.
-
-   C'est le prix a payer de l'architecture « tout derriere une API
-   OpenAI-compatible » quand le modele local est un modele a raisonnement.
-   Trois sorties possibles, par ordre de proprete :
-     - provisionner un juge SANS raisonnement cote llm-service (le mieux :
-       un juge different du generateur est de toute facon necessaire pour
-       eviter le biais d'auto-preference) ;
-     - interposer un proxy qui injecte think=false dans /v1 ;
-     - assumer le cout et limiter via `max_samples`.
-   D'ou l'option `max_samples`, indispensable en pratique.
+   Avec le service LLM central, « chat » (Qwen3.5) raisonne par defaut ;
+   Ragas n'a aucun reglage pour cela. On le coupe donc en enveloppant
+   `client.chat.completions.create` du client OpenAI remis a Ragas, pour
+   injecter chat_template_kwargs.enable_thinking=False sur chaque requete.
+   Le cout reste plusieurs appels de jugement par question : d'ou
+   l'option `max_samples`, utile en pratique.
 
 DEUX PIEGES D'INTEGRATION, decouverts en branchant reellement l'outil :
 
@@ -75,6 +64,7 @@ from ragas.dataset_schema import SingleTurnSample  # noqa: E402
 from ragas.embeddings import OpenAIEmbeddings as RagasOpenAIEmbeddings  # noqa: E402
 from ragas.llms import llm_factory  # noqa: E402
 
+from ..llm import thinking_body  # noqa: E402
 from ..settings import settings as default_settings  # noqa: E402
 from .base import EvalContext, Score, align_by_input, register  # noqa: E402
 
@@ -134,6 +124,15 @@ class RagasEvaluator:
             api_key=settings.llm_api_key,
             timeout=settings.llm_timeout_s,
         )
+        # Le service central active la reflexion de « chat » par defaut : on la
+        # coupe sur chaque requete du juge (sinon lenteur et JSON pollues).
+        _create = client.chat.completions.create
+
+        def _create_no_think(*args, **kwargs):
+            kwargs.setdefault("extra_body", thinking_body(False))
+            return _create(*args, **kwargs)
+
+        client.chat.completions.create = _create_no_think  # type: ignore[method-assign]
         judge = llm_factory(cfg.models.judge, provider="openai", client=client)
         embeddings = RagasOpenAIEmbeddings(client=client, model=cfg.models.embedder)
 

@@ -14,6 +14,23 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
+
+
+def _load_dotenv() -> None:
+    """Charge `.env` (racine du depot) sans ecraser l'environnement existant."""
+    path = Path(__file__).resolve().parents[2] / ".env"
+    if not path.is_file():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+
+
+_load_dotenv()
 
 
 def _env(name: str, default: str) -> str:
@@ -30,16 +47,16 @@ class Settings:
     db_name: str = field(default_factory=lambda: _env("DB_NAME", "ragbench"))
 
     # --- Serveur d'inference --------------------------------------------
-    # Une seule URL, OpenAI-compatible. Ollama expose /v1 nativement, vLLM
-    # aussi : basculer de l'un a l'autre ne demande que de changer cette
-    # variable, et devient donc une variable experimentale mesurable.
+    # Une seule URL, OpenAI-compatible : le service LLM central (LiteLLM,
+    # http://127.0.0.1:8080/v1 depuis l'hote, http://llm-central:8080/v1 dans
+    # llm-net). Cle obligatoire (LITELLM_MASTER_KEY du service) dans .env.
     llm_base_url: str = field(
-        default_factory=lambda: _env("LLM_BASE_URL", "http://localhost:11434/v1")
+        default_factory=lambda: _env("LLM_BASE_URL", "http://127.0.0.1:8080/v1")
     )
-    llm_api_key: str = field(default_factory=lambda: _env("LLM_API_KEY", "ollama"))
+    llm_api_key: str = field(default_factory=lambda: _env("LLM_API_KEY", ""))
 
-    # Nombre d'appels LLM simultanes. A aligner sur OLLAMA_NUM_PARALLEL cote
-    # llm-service : demander plus ne fait que remplir la file d'attente.
+    # Nombre d'appels LLM simultanes. Demander plus que ce que le service
+    # central absorbe ne fait que remplir sa file d'attente.
     llm_concurrency: int = field(default_factory=lambda: int(_env("LLM_CONCURRENCY", "4")))
     llm_timeout_s: float = field(default_factory=lambda: float(_env("LLM_TIMEOUT_S", "180")))
     llm_max_retries: int = field(default_factory=lambda: int(_env("LLM_MAX_RETRIES", "3")))

@@ -69,9 +69,11 @@ def test_matrice_fusionne_en_profondeur(tmp_path):
 # Hashes des configs versionnees, releves avant l'ajout du premier champ du
 # catalogue de techniques. S'ils bougent, tous les runs historiques deviennent
 # incomparables aux nouveaux : c'est une regression, pas une mise a jour.
+# Exception assumee : le passage au service central (modeles chat/embed, sans
+# prefixes nomic) a change les modeles, donc les hashes, une fois pour toutes.
 HASHES_HISTORIQUES = {
-    "configs/baseline.yml": "bb2b20210128",
-    "configs/recommended.yml": "b4a78b819a03",
+    "configs/baseline.yml": "531b8ac15e87",
+    "configs/recommended.yml": "ee9e927d31ca",
 }
 
 

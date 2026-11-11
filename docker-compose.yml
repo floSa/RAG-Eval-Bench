@@ -59,7 +59,7 @@ services:
     env_file: [.env]
     environment:
       DB_HOST: db
-      LLM_BASE_URL: http://ollama-central:11434/v1
+      LLM_BASE_URL: http://llm-central:8080/v1
     command: streamlit run src/ragbench/ui/app.py --server.port 8501 --server.address 0.0.0.0 --client.toolbarMode viewer
     ports:
       - "8502:8501"
@@ -79,7 +79,7 @@ services:
     env_file: [.env]
     environment:
       DB_HOST: db
-      LLM_BASE_URL: http://ollama-central:11434/v1
+      LLM_BASE_URL: http://llm-central:8080/v1
     volumes:
       - ./data:/app/data
       - ./configs:/app/configs
