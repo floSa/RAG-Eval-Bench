@@ -30,7 +30,7 @@ base:
     strategy: recursive
     chunk_size: 1000
     chunk_overlap: 150
-    document_prefix: "search_document: "
+    document_prefix: ""
     header_fields: [title, source, published_at]
     header_scope: chunk
   retrieval:
@@ -39,7 +39,7 @@ base:
     fetch_k: 30
     rerank: none
     max_per_document: 2
-    query_prefix: "search_query: "
+    query_prefix: ""
     query_rewrite: false
   generation:
     prompt_template: default
@@ -48,8 +48,8 @@ base:
     allow_abstain: true
     thinking: false
   models:
-    embedder: nomic-embed-text:latest
-    judge: gemma4:e4b
+    embedder: embed
+    judge: chat
   seed: 42
 
 variants:

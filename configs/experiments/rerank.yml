@@ -36,10 +36,9 @@ base:
   # Identiques a la baseline : dense-k5 garde ainsi le hash de la baseline et
   # reste comparable aux runs historiques.
   models:
-    generator: gemma4:e4b
-    embedder: nomic-embed-text:latest
-    judge: gemma4:e4b
-
+    generator: chat
+    embedder: embed
+    judge: chat
 variants:
   - name: dense-k5
     description: Reference, identique a la baseline.

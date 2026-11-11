@@ -13,7 +13,7 @@ chunking:
   strategy: recursive
   chunk_size: 1000
   chunk_overlap: 150
-  document_prefix: "search_document: "
+  document_prefix: ""
   # Indispensable sur ce corpus : les questions contraignent la source et la
   # date (« as reported by The Verge », « published on November 1, 2023 »).
   # Sans ces champs dans le chunk, le generateur ne peut pas verifier la
@@ -31,7 +31,7 @@ retrieval:
   # top_k et le recall plafonne. La variante `no-doc-cap` de
   # configs/experiments/retrieval.yml mesure ce que ce plafond apporte.
   max_per_document: 2
-  query_prefix: "search_query: "
+  query_prefix: ""
   query_rewrite: false
 
 generation:
@@ -48,11 +48,10 @@ generation:
   thinking: false
 
 models:
-  generator: gemma4:e4b
-  embedder: nomic-embed-text:latest
+  generator: chat
+  embedder: embed
   # judge == generator : biais d'auto-preference assume pour la premiere
   # baseline, signale par PipelineConfig.warnings() et fige dans runs.warnings.
   # A remplacer des qu'un second modele est provisionne cote llm-service.
-  judge: gemma4:e4b
-
+  judge: chat
 seed: 42

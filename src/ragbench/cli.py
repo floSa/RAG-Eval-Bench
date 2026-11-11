@@ -843,7 +843,7 @@ def leaderboard_cmd(
 
 
 @app.command()
-def embed(text: str, model: str = "nomic-embed-text:latest") -> None:
+def embed(text: str, model: str = "embed") -> None:
     """Calcule un embedding — sert a verifier la dimension d'un modele."""
 
     async def _run() -> None:

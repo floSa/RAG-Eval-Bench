@@ -37,10 +37,9 @@ base:
     # d'experience declare TOUT ce qu'elle utilise, elle n'herite pas.
     max_tokens: 512
   models:
-    generator: gemma4:e4b
-    embedder: nomic-embed-text:latest
-    judge: gemma4:e4b
-
+    generator: chat
+    embedder: embed
+    judge: chat
 variants:
   # --- Temoin sans retrieval -------------------------------------------
   # Le resultat le plus important de la matrice : si le RAG ne bat pas ca,

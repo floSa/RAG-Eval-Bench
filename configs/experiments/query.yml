@@ -23,7 +23,7 @@ base:
     strategy: recursive
     chunk_size: 1000
     chunk_overlap: 150
-    document_prefix: "search_document: "
+    document_prefix: ""
     header_fields: [title, source, published_at]
     header_scope: chunk
   retrieval:
@@ -31,7 +31,7 @@ base:
     top_k: 5
     fetch_k: 30
     max_per_document: 2
-    query_prefix: "search_query: "
+    query_prefix: ""
   generation:
     prompt_template: default
     temperature: 0.0
@@ -39,8 +39,8 @@ base:
     thinking: false
   models:
     generator: granite4.2:8b
-    embedder: nomic-embed-text:latest
-    judge: gemma4:e4b
+    embedder: embed
+    judge: chat
   seed: 42
 
 variants:

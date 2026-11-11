@@ -22,7 +22,7 @@ base:
     top_k: 5
     fetch_k: 20
     max_per_document: 2
-    query_prefix: "search_query: "
+    query_prefix: ""
   generation:
     prompt_template: default
     temperature: 0.0
@@ -30,8 +30,8 @@ base:
     max_tokens: 512
   models:
     generator: granite4.2:8b
-    embedder: nomic-embed-text:latest
-    judge: gemma4:e4b
+    embedder: embed
+    judge: chat
   seed: 42
 
 variants:

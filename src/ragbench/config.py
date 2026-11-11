@@ -52,10 +52,10 @@ class ChunkingConfig(_Frozen):
     #              chunk en herite, ce qui etait le comportement initial et
     #              se revele insuffisant.
     header_scope: Literal["chunk", "document"] = "chunk"
-    # Prefixe applique aux passages avant embedding. nomic-embed-text attend
-    # "search_document: " cote corpus et "search_query: " cote question ;
-    # l'oublier coute plusieurs points de recall.
-    document_prefix: str = "search_document: "
+    # Prefixe applique aux passages avant embedding. bge-m3 (modele "embed" du
+    # service central) n'en demande aucun ; nomic-embed-text attendait
+    # "search_document: " cote corpus et "search_query: " cote question.
+    document_prefix: str = ""
 
 
 class RetrievalConfig(_Frozen):
@@ -88,7 +88,7 @@ class RetrievalConfig(_Frozen):
     # ecartes.
     max_per_document: int | None = None
     similarity_threshold: float | None = None
-    query_prefix: str = "search_query: "
+    query_prefix: str = ""
     # Reecriture de la question avant recherche (le pipeline d'origine le
     # faisait en dur ; c'est devenu une variable experimentale).
     query_rewrite: bool = False
@@ -174,9 +174,10 @@ class ModelConfig(_Frozen):
     documente par le framework CALM). Verifie par PipelineConfig.warnings().
     """
 
-    generator: str = "gemma4:e4b"
-    embedder: str = "nomic-embed-text:latest"
-    judge: str = "gemma4:e4b"
+    # Alias du service LLM central (LiteLLM) : chat, embed, rerank.
+    generator: str = "chat"
+    embedder: str = "embed"
+    judge: str = "chat"
     verifier: str | None = None
 
 

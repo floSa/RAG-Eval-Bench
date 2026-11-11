@@ -35,10 +35,9 @@ base:
     allow_abstain: true
     thinking: false
   models:
-    generator: gemma4:e4b
-    embedder: nomic-embed-text:latest
-    judge: gemma4:e4b
-
+    generator: chat
+    embedder: embed
+    judge: chat
 variants:
   - name: abstain-reference
     description: La baseline, pour l'appariement.
