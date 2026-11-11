@@ -59,7 +59,7 @@ découlent, et elles structurent tout le projet.
    publie son κ de Cohen.
 
 Tout fonctionne **sans aucun appel réseau sortant** : corpus local, modèles servis par
-l'Ollama central du dépôt `llm-service`.
+le service LLM central (dépôt `LLM-Service`, proxy LiteLLM).
 
 ---
 
@@ -73,10 +73,10 @@ l'Ollama central du dépôt `llm-service`.
 | `src/ragbench/runner/` | Exécution des campagnes, comparaison, calibration |
 | `src/ragbench/ui/` | Tableau de bord Streamlit |
 | PostgreSQL + pgvector | Corpus, embeddings, runs, prédictions, scores, annotations |
-| `ollama-central` | Serveur d'inférence, externe au projet |
+| `llm-central` | Service LLM central (LiteLLM), externe au projet |
 
 Tout passe par une **API OpenAI-compatible**. C'est la décision qui porte le reste :
-Ollama et vLLM l'exposent tous deux, et tous les frameworks d'évaluation acceptent un
+LiteLLM, Ollama et vLLM l'exposent, et tous les frameworks d'évaluation acceptent un
 `base_url` custom. Un seul point d'entrée suffit donc pour brancher n'importe quel
 framework sur n'importe quel moteur.
 
@@ -97,7 +97,7 @@ flowchart LR
   end
   cfg --> run
   run --> pg[(pgvector)]
-  run -.->|OpenAI-compatible| llm[ollama-central]
+  run -.->|OpenAI-compatible| llm[llm-central]
   ev -.->|OpenAI-compatible| llm
 ```
 
@@ -115,9 +115,11 @@ Détail complet dans [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Démarrage
 
-**Prérequis** : `make up` dans `~/mes_projets/llm-service` — c'est lui qui fournit
-l'Ollama central et le réseau Docker `llm-net`. Modèles attendus : `gemma4:e4b`,
-`nomic-embed-text`, `llama3.2:3b`.
+**Prérequis** : le service LLM central (dépôt `LLM-Service`) doit tourner : il fournit
+l'API sur `http://127.0.0.1:8080/v1` et le réseau Docker `llm-net`. Alias utilisés :
+`chat` (génération et juge, Qwen3.5-4B), `embed` (bge-m3, **1024 dimensions**),
+`rerank` (bge-reranker-v2-m3). La clé est la valeur de `LITELLM_MASTER_KEY` dans le
+`.env` de `LLM-Service` : à copier dans le `.env` de ce projet (non suivi par git).
 
 ```bash
 docker compose up -d db
@@ -146,7 +148,7 @@ uv run ragbench eval run 1
 |---|---|---|
 | Tableau de bord | <http://localhost:8502> | `docker compose up -d ui` |
 | PostgreSQL | `localhost:5432` | `docker compose up -d db` |
-| Ollama central | <http://localhost:11434> | `make up` dans `llm-service` |
+| Service LLM central | <http://127.0.0.1:8080/v1> | démarré depuis `LLM-Service` |
 
 ---
 
@@ -156,6 +158,18 @@ Deux niveaux, et la distinction est structurante : ce qui est dans `.env` ne doi
 **jamais** changer un résultat d'évaluation ; ce qui change un résultat vit dans
 `configs/*.yml` et entre dans le hash de la configuration.
 
+### Réindexer après le passage à `embed` (bge-m3, 1024 dimensions)
+
+Les index construits avec `nomic-embed-text` (768 dimensions) restent intacts et
+lisibles uniquement avec cet embedder. La colonne `chunks.embedding` n'a pas de dimension
+fixe et l'`index_hash` dépend de l'embedder : toute configuration qui utilise
+`embedder: embed` crée **automatiquement un nouvel index** (nouvel `index_id`) sans
+toucher aux anciens. Pour réindexer : lancer la campagne avec la configuration à jour
+(`uv run ragbench run configs/baseline.yml`, par exemple) ; l'index est construit au
+premier appel. Pour conserver l'ancien comportement, garder `embedder: nomic-embed-text:latest`
+et ses préfixes `search_document: ` / `search_query: ` dans la configuration (le service
+central ne le sert pas).
+
 ### Infrastructure — `.env`
 
 | Variable | Défaut | Effet |
@@ -164,9 +178,9 @@ Deux niveaux, et la distinction est structurante : ce qui est dans `.env` ne doi
 | `DB_PORT` | `5432` | Port PostgreSQL |
 | `DB_USER` / `DB_PASSWORD` | `postgres` / `postgres` | Identifiants. À changer hors usage local |
 | `DB_NAME` | `ragbench` | Base cible, créée par `ragbench db init` |
-| `LLM_BASE_URL` | `http://localhost:11434/v1` | Endpoint OpenAI-compatible. `http://ollama-central:11434/v1` dans `llm-net` |
-| `LLM_API_KEY` | `ollama` | Jeton factice, ignoré par Ollama |
-| `LLM_CONCURRENCY` | `4` | Appels LLM simultanés. À aligner sur `OLLAMA_NUM_PARALLEL` : demander plus ne fait que remplir la file du serveur |
+| `LLM_BASE_URL` | `http://127.0.0.1:8080/v1` | Endpoint OpenAI-compatible. `http://llm-central:8080/v1` dans `llm-net` |
+| `LLM_API_KEY` | *(vide)* | **Obligatoire** : `LITELLM_MASTER_KEY` du service central. Dans `.env` uniquement |
+| `LLM_CONCURRENCY` | `4` | Appels LLM simultanés. Demander plus que le service central n'absorbe ne fait que remplir sa file |
 | `LLM_TIMEOUT_S` | `180` | Délai d'expiration par appel |
 | `LLM_MAX_RETRIES` | `3` | Tentatives avant échec, avec repli exponentiel |
 
@@ -218,7 +232,7 @@ alors stockés sous `évaluateur@juge`).
 
 ## Résultats de référence
 
-MultiHop-RAG, 200 questions stratifiées, `gemma4:e4b` + `nomic-embed-text`. Détail et
+MultiHop-RAG, 200 questions stratifiées, `gemma4:e4b` + `nomic-embed-text` (mesures historiques, avant le passage au service central). Détail et
 méthode dans [docs/METHODOLOGIE.md](docs/METHODOLOGIE.md).
 
 | Question | Réponse | Statut |
@@ -293,12 +307,12 @@ non quand le tirage a été défavorable. Ignorés si aucune campagne n'a tourn�
 | Problème | Cause | Solution |
 |---|---|---|
 | `vector type not found in the database` | L'extension pgvector n'est pas créée | `uv run ragbench db init` |
-| `doctor` : inférence ko | `llm-net` absent ou Ollama arrêté | `make up` dans `~/mes_projets/llm-service` |
-| Réponses vides, sans erreur | Le budget `max_tokens` est consommé par le raisonnement du modèle | Mettre `thinking: false` dans la configuration, ou relever `max_tokens` |
+| `doctor` : inférence ko | `llm-net` absent, service central arrêté ou clé `LLM_API_KEY` absente/fausse (401) | Démarrer `LLM-Service` ; vérifier `.env` |
+| Réponses vides, sans erreur | Le budget `max_tokens` est consommé par le raisonnement du modèle | Le client coupe la réflexion par défaut (`enable_thinking=False`) ; si `thinking: true`, relever `max_tokens` |
 | Recherche lexicale sans résultat | Question composée uniquement de mots-outils | Comportement normal : la requête ne produit aucun lexème |
 | Évaluateur `indisponible` dans `eval list` | Extra non installé | `uv sync --extra ragas` ou `--extra deepeval` — la raison exacte est affichée |
-| Campagne très lente | `OLLAMA_NUM_PARALLEL=1` côté `llm-service` sérialise tous les appels | Relever à 4 en surveillant la VRAM (`nvidia-smi`) |
-| Ragas expire | Le juge raisonne à chaque appel (12–30 s) | `-o judge=llama3.2:3b` et `-o max_samples=…` |
+| Campagne très lente | Le service central sérialise les appels | Ajuster `LLM_CONCURRENCY` |
+| Ragas expire | Beaucoup d'appels de jugement par question | `-o max_samples=…` |
 
 ---
 
@@ -309,7 +323,7 @@ non quand le tirage a été défavorable. Ignorés si aucune campagne n'a tourn�
 | PostgreSQL 17 | Base de données | PostgreSQL License |
 | pgvector | Recherche vectorielle (client Python) | MIT |
 | psycopg 3 | Accès PostgreSQL | **LGPL-3.0-only** |
-| Ollama | Serveur d'inférence local | MIT |
+| LiteLLM / LLM-Service | Service d'inférence central | MIT |
 | openai (client Python) | Accès aux modèles | Apache-2.0 |
 | pydantic | Validation des configurations | MIT |
 | typer / rich | Interface en ligne de commande | MIT |

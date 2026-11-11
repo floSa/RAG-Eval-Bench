@@ -28,7 +28,7 @@ les réponses.
 | `db` | `pgvector/pgvector:pg17` | 5432 | **5432** | Corpus, embeddings, runs, prédictions, scores, annotations |
 | `ui` | build `docker/Dockerfile` | 8501 | **8502** | Tableau de bord Streamlit |
 | `runner` | build `docker/Dockerfile` | — | — | Exécution de campagnes. Profil `jobs`, pas un service permanent |
-| `ollama-central` | *externe* (dépôt `llm-service`) | 11434 | 11434 | Génération, embeddings, jugement |
+| `llm-central` | *externe* (dépôt `LLM-Service`, LiteLLM) | 8080 | 8080 | Génération, embeddings, jugement |
 
 `ui` et `runner` partagent **la même image** : deux points d'entrée sur le même code.
 Deux images divergeraient tôt ou tard, et le tableau de bord afficherait des résultats
@@ -99,7 +99,7 @@ flowchart TD
     scores --> cal[calibrate<br/>kappa]
     scores --> ui[tableau de bord]
   end
-  camp -.->|OpenAI-compatible| llm[ollama-central]
+  camp -.->|OpenAI-compatible| llm[llm-central]
   ev -.->|OpenAI-compatible| llm
 ```
 
@@ -108,10 +108,10 @@ Scénario détaillé d'une question, en mode dense avec plafond par document :
 ```mermaid
 sequenceDiagram
   participant W as Worker
-  participant O as ollama-central
+  participant O as llm-central
   participant P as pgvector
-  W->>O: embeddings(search_query: question)
-  O-->>W: vecteur 768
+  W->>O: embeddings(question)
+  O-->>W: vecteur 1024
   W->>P: parcours exact, fetch_k=20 chunks
   P-->>W: 20 candidats
   W->>W: plafond 2 chunks/document, troncature a top_k
@@ -127,7 +127,7 @@ sequenceDiagram
 | Réseau | Services | Rôle |
 |---|---|---|
 | `app-network` | `db`, `ui`, `runner` | Réseau interne du projet |
-| `llm-net` | `ui`, `runner` (+ `ollama-central`) | **External** — créé par `make up` dans `llm-service`. Un seul propriétaire évite les conflits de labels entre composes. |
+| `llm-net` | `ui`, `runner` (+ `llm-central`) | **External** — créé par `make up` dans `llm-service`. Un seul propriétaire évite les conflits de labels entre composes. |
 
 | Volume | Monté par | Contenu |
 |---|---|---|
@@ -156,11 +156,12 @@ Quand un juge est imposé à l'évaluation (`-o judge=…`), les scores sont sto
   native de chaque moteur, **parce que** Ollama et vLLM l'exposent tous deux et que tous
   les frameworks d'évaluation acceptent un `base_url` custom : un seul point d'entrée
   suffit, sans adaptateur maison ni appel externe.
-  *Limite* : l'endpoint `/v1` d'Ollama **ignore silencieusement** le champ `think` tout
-  en facturant les tokens de réflexion. Mesuré sur `gemma4:e4b` : 499 tokens générés
-  avec raisonnement contre 7 sans, pour la même réponse. Une échappatoire vers
-  `/api/chat` est utilisée **uniquement** quand une configuration règle explicitement le
-  raisonnement ([llm.py](../src/ragbench/llm.py)).
+  *Réflexion* : `chat` (Qwen3.5) raisonne par défaut. Le client la coupe sur chaque
+  requête via `extra_body={"chat_template_kwargs": {"enable_thinking": False}}`
+  (`thinking: true` dans la configuration la réactive ; le raisonnement est lu dans
+  `message.reasoning_content`). Même réglage injecté pour le client Ragas
+  ([llm.py](../src/ragbench/llm.py)). Mesures historiques sur Ollama : 499 tokens avec
+  raisonnement contre 7 sans.
 
 - **SQL nu plutôt qu'un ORM**, **parce que** les requêtes de recherche sont la variable
   expérimentale principale du projet : on veut pouvoir les lire et les modifier sans
@@ -209,7 +210,7 @@ autorisation, ni chiffrement — et n'est pas destiné à être exposé sur un r
 |---|---|---|
 | Aucun appel réseau sortant à l'exécution | ✅ | Le corpus et les réponses ne quittent pas la machine |
 | `.env` hors du suivi git | ✅ | Il contenait les identifiants de la base ; retiré du suivi en phase 0 |
-| Secrets applicatifs | ✅ | Aucun : `LLM_API_KEY=ollama` est un jeton factice qu'Ollama ignore |
+| Secrets applicatifs | ✅ | Aucun : `LLM_API_KEY` (clé du service central) vit dans `.env`, non suivi par git ; `.env.example` ne contient aucun secret |
 | Réseau `llm-net` en `external` | ✅ | Un seul compose propriétaire du réseau |
 | Authentification sur le tableau de bord | ❌ | Streamlit sur 8502 sans mot de passe — à ne pas exposer hors de la machine |
 | Mot de passe Postgres | ❌ | `postgres`/`postgres` par défaut dans `.env.example` — acceptable en local, à changer pour tout autre usage |

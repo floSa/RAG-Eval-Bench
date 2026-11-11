@@ -100,7 +100,7 @@ Le but du banc : savoir si un ajout améliore un RAG. Cela impose :
 
 - **Python 3.12** et **uv**.
 - **PostgreSQL 17 avec pgvector**, fourni par `docker compose up -d db`.
-- **Un serveur de modèles à API OpenAI-compatible** (Ollama ou vLLM), avec :
+- **Un serveur de modèles à API OpenAI-compatible** (le service LLM central `LLM-Service` : alias `chat`, `embed`, `rerank`), avec :
   - un modèle de génération ;
   - un modèle d'embedding ;
   - un modèle juge, de préférence d'une autre famille que le générateur.
